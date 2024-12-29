@@ -1,2 +1,2 @@
 # ship_evacuation
-Open Source ship evacuation code for evacuation analysis nad ship layout design
+Open Source ship evacuation code for evacuation analysis and ship layout design
