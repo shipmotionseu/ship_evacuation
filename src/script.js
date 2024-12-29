@@ -35,11 +35,11 @@ function createDeck(deck_length,deck_width,deck_location_z,cell_x,cell_y) {
             deck_array[i][j] = -1;
         }
     }
+    scene.add(deck);
     return {
         deck,
         deck_array
     };
-    scene.add(deck);
 };
 
 let deck_length=35
