@@ -49,4 +49,7 @@ let cell_x=0.4
 let cell_y=0.4
 
 let init_vars_scene = createEmptyScene();
+let scene = init_vars_scene.scene;
+let camera = init_vars_scene.camera;
+let renderer = init_vars_scene.renderer;
 let init_vars_deck = createDeck(deck_length,deck_width,0,cell_x,cell_y);
