@@ -23,4 +23,17 @@ function createEmptyScene() {
     };
 };
 
+function createDeck(deck_length,deck_width,deck_location_z,cell_x,cell_y,deck_array) {
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(deck_length*cell_x, deck_width*cell_y, 0.02), new THREE.MeshBasicMaterial({
+        color: 'lightblue'
+    }));
+    deck.position.z = deck_location_z - (2.5 / 2)
+    for (let i = 0; i < deck_length + 1; i++) {
+        deck_array[i] = [];
+        for (let j = 0; j < deck_width + 1; j++) {
+            deck_array[i][j] = -1;
+        }
+    }
+};
+
 let init_vars_scene = createEmptyScene();
