@@ -16,16 +16,20 @@
 
     
 <body>
-  <div id="main" style="width:90%;border:1px solid grey; padding:20px; font-family:Helvetica, sans-serif; margin: 0 auto;">
+  <div id="main" style="width:95%;border:1px solid grey; padding:20px; font-family:Helvetica, sans-serif; margin: 0 auto;">
 <h1>Ship Corridor Creator</h1> 
+<div>
 <div align="right">
   <p style="width:90%" align="right"> <small>by Tomasz Hinz, Gdansk Tech and Henrique M. Gaspar, NTNU i Alesund<br>v0.1, Dec 2024.</small></p>
 </div>
 <p>Ship Evacuation is a tool to simulate the movement of persons in a ship corridor. The simulation is performed for a given number of persons. The simulation results are presented in the form of a 3D visualisation and 2D plot. The results can be saved to a CSV or JSON file.</p>
-<p>Location of mustering station: <span id="mustering_x">0</span>,<span id="mustering_y">17</span></p>
 </div>
+
+<p>Location of mustering station: <span id="mustering_x">0</span>,<span id="mustering_y">17</span></p>
+
 <p><div id='movment3D' style="width:100%;border:1px solid rgb(255, 0, 0)"><!--Three.js will be drawn inside this DIV --></div></p>
 <script type="module" src="src/script.js"></script>
+</div>
 </body>    
     
 </html>
