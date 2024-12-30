@@ -15,7 +15,7 @@ function createEmptyScene() {
     document.querySelector("#movment3D").appendChild(renderer.domElement);
 
     scene.background = new THREE.Color(0xffffff);
-    camera.position.z = 6;
+    camera.position.z = 14;
     return {
         scene,
         camera,
@@ -42,8 +42,8 @@ function createDeck(deck_length,deck_width,deck_location_z,cell_x,cell_y) {
     };
 };
 
-let deck_length=35
-let deck_width=20
+let deck_length=72.5;
+let deck_width=40;
 
 let cell_x=0.4
 let cell_y=0.4
