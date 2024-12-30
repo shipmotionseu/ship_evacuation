@@ -53,7 +53,8 @@ let scene = init_vars_scene.scene;
 let camera = init_vars_scene.camera;
 let renderer = init_vars_scene.renderer;
 let init_vars_deck = createDeck(deck_length,deck_width,0,cell_x,cell_y);
-
+let deck = init_vars_deck.deck;
+deck_array = JSON.parse(JSON.stringify(init_vars_deck.deck_array))
 
 function ShowDeck() {
     renderer.render(scene, camera);
