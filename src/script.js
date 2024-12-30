@@ -44,6 +44,29 @@ function createDeck(deck_length,deck_width,deck_location_z,cell_x,cell_y) {
     };
 };
 
+function createMustering(mustering_x_begin,mustering_x_end, mustering_y_begin, mustering_y_end,deck_array)
+{
+    let mustering_array = [];
+    mustering_array = JSON.parse(JSON.stringify(deck_array))
+    let mustering = new THREE.Mesh(new THREE.BoxGeometry(mustering_x_end-mustering_x_begin, mustering_y_end-mustering_y_begin, 0.02), new THREE.MeshBasicMaterial({
+        color: 'red'
+    }));
+    mustering.position.x = mustering_x_begin + (mustering_x_end-mustering_x_begin)/2
+    mustering.position.y = mustering_y_begin + (mustering_y_end-mustering_y_begin)/2
+
+    for (let i = mustering_x_begin; i < mustering_x_end + 1; i++) {
+        for (let j = mustering_y_begin; j < mustering_y_end + 1; j++) {
+            mustering_array[i][j] = 1;
+        }
+    }
+    scene.add(mustering);
+    
+    return {
+        mustering,
+        mustering_array
+    };
+};
+
 let deck_length=45;
 let deck_width=35;
 let deck_array = []
@@ -57,6 +80,14 @@ let renderer = init_vars_scene.renderer;
 let init_vars_deck = createDeck(deck_length,deck_width,0,cell_x,cell_y);
 let deck = init_vars_deck.deck;
 deck_array = JSON.parse(JSON.stringify(init_vars_deck.deck_array))
+
+let mustering_x_begin=1;
+let mustering_x_end=1;
+let mustering_y_begin=7;
+let mustering_y_end=8;
+let init_vars_mustering = createMustering(mustering_x_begin,mustering_x_end, mustering_y_begin, mustering_y_end,deck_array);
+deck_array = JSON.parse(JSON.stringify(init_vars_mustering.mustering));
+
 
 function ShowDeck() {
     renderer.render(scene, camera);
