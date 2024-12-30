@@ -15,7 +15,7 @@ function createEmptyScene() {
     document.querySelector("#movment3D").appendChild(renderer.domElement);
 
     scene.background = new THREE.Color(0xffffff);
-    camera.position.z = 14;
+    camera.position.z = 30;
     return {
         scene,
         camera,
@@ -25,10 +25,12 @@ function createEmptyScene() {
 
 function createDeck(deck_length,deck_width,deck_location_z,cell_x,cell_y) {
     let deck_array = [];
-    const deck = new THREE.Mesh(new THREE.BoxGeometry(deck_length*cell_x, deck_width*cell_y, 0.02), new THREE.MeshBasicMaterial({
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(deck_length, deck_width, 0.02), new THREE.MeshBasicMaterial({
         color: 'lightblue'
     }));
     deck.position.z = deck_location_z - (2.5 / 2)
+    let deck_length_cell=deck_length*cell_x;
+    let deck_width_cell=deck_width*cell_y;
     for (let i = 0; i < deck_length + 1; i++) {
         deck_array[i] = [];
         for (let j = 0; j < deck_width + 1; j++) {
@@ -44,7 +46,7 @@ function createDeck(deck_length,deck_width,deck_location_z,cell_x,cell_y) {
 
 let deck_length=45;
 let deck_width=35;
-
+let deck_array = []
 let cell_x=0.4
 let cell_y=0.4
 
