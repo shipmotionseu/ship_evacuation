@@ -42,8 +42,8 @@ function createDeck(deck_length,deck_width,deck_location_z,cell_x,cell_y) {
     };
 };
 
-let deck_length=72.5;
-let deck_width=40;
+let deck_length=45;
+let deck_width=35;
 
 let cell_x=0.4
 let cell_y=0.4
