@@ -15,7 +15,7 @@ function createEmptyScene() {
     document.querySelector("#movment3D").appendChild(renderer.domElement);
 
     scene.background = new THREE.Color(0xffffff);
-    camera.position.z = 80;
+    camera.position.z = 6;
     return {
         scene,
         camera,
