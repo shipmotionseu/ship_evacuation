@@ -13,7 +13,7 @@ function createEmptyScene() {
     const renderer = new THREE.WebGLRenderer();
     renderer.setSize(0.88 * window.innerWidth, 0.88 * window.innerHeight);
     document.querySelector("#movment3D").appendChild(renderer.domElement);
-
+    
     scene.background = new THREE.Color(0xffffff);
     camera.position.z = 30;
     return {
@@ -85,6 +85,12 @@ let mustering_x_begin=1;
 let mustering_x_end=1;
 let mustering_y_begin=7;
 let mustering_y_end=8;
+
+let mustering_x_cell_begin=1;
+let mustering_x_cell_end=1;
+let mustering_y_cell_begin=7;
+let mustering_y_cell_end=8;
+
 let init_vars_mustering = createMustering(mustering_x_begin,mustering_x_end, mustering_y_begin, mustering_y_end,deck_array);
 deck_array = JSON.parse(JSON.stringify(init_vars_mustering.mustering));
 
