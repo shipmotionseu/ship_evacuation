@@ -109,8 +109,33 @@ function createPerson(no_persons) {
     return {persons};
 }
 
+function addMusteringStation(mes_x,mes_y,mes_rows,mes_columns,deck_location_z) {
+    // let mes_rows = 10;
+    // let mes_columns = 5;
+     const mustering = new THREE.Mesh(new THREE.BoxGeometry(mes_columns - 1, mes_rows - 1, 2.5), new THREE.MeshBasicMaterial({
+         color: 'red',
+         opacity: 0.5,
+         transparent: true
+     }));
+     mustering.position.x = mes_x
+     mustering.position.y = mes_y
+     mustering.position.z = deck_location_z
+     const MusteringBB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
+     MusteringBB.setFromObject(mustering);
+
+     scene.add(mustering);
+     renderer.setAnimationLoop(ShowDeck);
+    return {
+            mustering,
+            MusteringBB
+        };
+    }
+
 persons=createPerson(10).persons;
 
+let init_vars_mustering = addMusteringStation(50,0,10,5,0);
+let mustering = init_vars_mustering.mustering;
+var  MusteringBB = init_vars_mustering.MusteringBB;
 
 function ShowDeck() {
     renderer.render(scene, camera);
@@ -122,15 +147,27 @@ function ShowDeck() {
 
   function animate() {
     deltaT = clock.getDelta();
-    requestAnimationFrame(animate);
+    if (inMES.includes(0)) {
+        requestAnimationFrame(animate);
+    }
    
     for (let i = 0; i < persons.length; i++) {
         if (inMES[i] == 0) {
+            let delta_mes_x=0;
+            let prev_x = persons[i].geometry.position.x;
+            let prev_y = persons[i].geometry.position.y;
+            let prev_z = persons[i].geometry.position.z;
+          
             persons[i].geometry.position.x = persons[i].geometry.position.x + deltaT * persons[i].speed;
             persons[i].x.push(persons[i].geometry.position.x);
             persons[i].y.push(persons[i].geometry.position.y);
             persons[i].z.push(persons[i].geometry.position.z);
             persons[i].time.push(time_step);
+            persons[i].BB.setFromObject(persons[i].geometry);
+            if (MusteringBB.intersectsBox(persons[i].BB)) {
+                inMES[i] = 1;
+                delta_mes_x=0.5;
+            }
         }
     }
 
