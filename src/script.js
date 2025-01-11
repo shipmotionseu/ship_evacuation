@@ -37,18 +37,18 @@ function createEmptyScene() {
     
     scene.background = new THREE.Color(0xffffff);
     camera.position.z = 60;
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.movementSpeed = 100;
-    controls.rollSpeed = Math.PI / 24;
-    controls.autoForward = 0;
-    controls.dragToLook = true;
+//    const controls = new OrbitControls(camera, renderer.domElement);
+//    controls.movementSpeed = 100;
+//    controls.rollSpeed = Math.PI / 24;
+//    controls.autoForward = 0;
+//    controls.dragToLook = true;
     let time_step=0;
     let deltaT = 0;
     return {
         scene,
         camera,
-        renderer,
-        controls
+        renderer //,
+ //       controls
     };
 };
 
@@ -83,7 +83,7 @@ let init_vars_scene = createEmptyScene();
 let scene = init_vars_scene.scene;
 let camera = init_vars_scene.camera;
 let renderer = init_vars_scene.renderer;
-let controls = init_vars_scene.controls;
+//let controls = init_vars_scene.controls;
 let init_vars_deck = createDeck(deck_length,deck_width,0);
 let deck = init_vars_deck.deck;
 
@@ -92,7 +92,7 @@ function createPerson(no_persons) {
         persons[i] = new Human(i + 1001, 3 + getRandomInt(3), new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 1.8), new THREE.MeshBasicMaterial({
             color: person_colors[i % person_colors.length],
         })));
-        persons[i].speed = 1 + getRandomInt(4);
+        persons[i].speed = 5 + getRandomInt(4);
         persons[i].geometry.position.x =-30 + getRandomInt(5) - 2.5;
         persons[i].geometry.position.y = getRandomInt(18) - 8;
         persons[i].x[0] = persons[i].geometry.position.x;
@@ -112,7 +112,7 @@ function createPerson(no_persons) {
 function addMusteringStation(mes_x,mes_y,mes_rows,mes_columns,deck_location_z) {
     // let mes_rows = 10;
     // let mes_columns = 5;
-     const mustering = new THREE.Mesh(new THREE.BoxGeometry(mes_columns - 1, mes_rows - 1, 2.5), new THREE.MeshBasicMaterial({
+     const mustering = new THREE.Mesh(new THREE.BoxGeometry(mes_columns, mes_rows, 2.5), new THREE.MeshBasicMaterial({
          color: 'red',
          opacity: 0.5,
          transparent: true
@@ -121,12 +121,21 @@ function addMusteringStation(mes_x,mes_y,mes_rows,mes_columns,deck_location_z) {
      mustering.position.y = mes_y
      mustering.position.z = deck_location_z
      const MusteringBB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
-     MusteringBB.setFromObject(mustering);
+     const mustering_inner = new THREE.Mesh(new THREE.BoxGeometry(mes_columns -1, mes_rows - 1, 2.5), new THREE.MeshBasicMaterial({
+        color: 'red',
+        opacity: 0.5,
+        transparent: true
+    }));
+    mustering_inner.position.x = mes_x
+    mustering_inner.position.y = mes_y
+    mustering_inner.position.z = deck_location_z
+     MusteringBB.setFromObject(mustering_inner);
 
      scene.add(mustering);
      renderer.setAnimationLoop(ShowDeck);
     return {
             mustering,
+            mustering_inner,
             MusteringBB
         };
     }
@@ -135,12 +144,29 @@ persons=createPerson(10).persons;
 
 let init_vars_mustering = addMusteringStation(50,0,10,5,0);
 let mustering = init_vars_mustering.mustering;
+let mustering_inner = init_vars_mustering.mustering_inner;
 var  MusteringBB = init_vars_mustering.MusteringBB;
 
 function ShowDeck() {
     renderer.render(scene, camera);
   }
 
+  const dragControls = new DragControls([mustering], camera, renderer.domElement);
+  dragControls.addEventListener('drag', function(event) {
+      console.log('drag');
+      mustering_inner.position.x = mustering.position.x;
+      mustering_inner.position.y = mustering.position.y;
+      mustering_inner.position.z = mustering.position.z;
+      MusteringBB.setFromObject(mustering_inner);
+
+      event.object.position.z = deck1_location_z; 
+
+      // This will prevent moving z axis, but will be on 0 line. change this to your object position of z axis.
+  })
+ //   dragControls.addEventListener('hoveron', function (event) { controls.enabled = false; });
+ //   dragControls.addEventListener('hoveroff', function (event) { controls.enabled = true; });
+ // controls.addEventListener('start', function (event) { dragControls.deactivate(); }); 
+ // controls.addEventListener('end', function (event) { dragControls.activate(); });
 
   //ShowDeck();
   requestAnimationFrame(animate);
