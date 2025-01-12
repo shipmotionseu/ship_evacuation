@@ -69,9 +69,15 @@ const person_colors = ['#006400', '#008000', '#556B2F', '#228B22', '#2E8B57', '#
 
 let deck_length=105.2;
 let deck_width=34;
-let deck_array = []
+
 let person_size_x=0.4
 let person_size_y=0.4
+let mes_x_global = document.getElementById("mes_loc_x").value;
+let mes_y_global = document.getElementById("mes_loc_y").value;
+let mes_width = document.getElementById("mes_width").value;
+let mes_length = document.getElementById("mes_length").value;
+let mes_x = mes_x_global-deck_length/2;
+let mes_y = mes_y_global-deck_width/2;
 
 let deltaT = 0;
 let clock = new THREE.Clock();
@@ -106,6 +112,7 @@ function createPerson(no_persons) {
     for (let i = 0; i < no_persons; i++) {
         scene.add(persons[i].geometry);
     }
+    renderer.setAnimationLoop(ShowDeck);
     return {persons};
 }
 
@@ -140,9 +147,9 @@ function addMusteringStation(mes_x,mes_y,mes_rows,mes_columns,deck_location_z) {
         };
     }
 
-persons=createPerson(10).persons;
+persons=createPerson(no_persons).persons;
 
-let init_vars_mustering = addMusteringStation(50,0,10,5,0);
+let init_vars_mustering = addMusteringStation(mes_x,mes_y,mes_width,mes_length,0);
 let mustering = init_vars_mustering.mustering;
 let mustering_inner = init_vars_mustering.mustering_inner;
 var  MusteringBB = init_vars_mustering.MusteringBB;
@@ -170,6 +177,15 @@ function ShowDeck() {
         scene.remove(persons[i].geometry);
     }
     persons=createPerson(no_persons).persons;
+    let init_vars_mustering = addMusteringStation(mustering.position.x,mustering.position.y,mes_width,mes_length,0);
+    let mustering = init_vars_mustering.mustering;
+    let mustering_inner = init_vars_mustering.mustering_inner;
+    var  MusteringBB = init_vars_mustering.MusteringBB;
+    document.getElementById("mes_loc_x").value = mustering.position.x+deck_length/2;
+    document.getElementById("mes_loc_y").value = mustering.position.y+deck_width/2;
+    document.getElementById("mes_width").value = mes_width;
+    document.getElementById("mes_length").value = mes_length;
+
 });
  //   dragControls.addEventListener('hoveron', function (event) { controls.enabled = false; });
  //   dragControls.addEventListener('hoveroff', function (event) { controls.enabled = true; });
@@ -229,4 +245,41 @@ function ShowDeck() {
 
     renderer.render(scene, camera);
   //controls.update();
-  }
+  };
+
+  $("#no_persons").on("change", function() {
+    const div = document.getElementById('IDresults');
+    no_persons = document.getElementById("no_persons").value
+    div.innerHTML = "";
+    const para = document.createElement('div');
+    for (let i = 0; i <= no_persons - 1; i++) {
+        const para = document.createElement('div');
+        para.innerText += "Person " + (i + 1) + " movment length: "
+        const divmovment = document.createElement('span');
+        divmovment.innerText = "0"
+        divmovment.id = "movment" + String(i + 1)
+        para.appendChild(divmovment);
+        div.appendChild(para);
+    }
+    for (let i = 0; i < persons.length; i++) {
+        scene.remove(persons[i].geometry);
+    }
+    createEmptyScene();
+    persons=createPerson(no_persons).persons;
+
+  });
+
+  $("#mes_loc_x").on("change", function() {
+    scene.remove(mustering);
+    scene.remove(mustering_inner);
+    mes_x_global = document.getElementById("mes_loc_x").value;
+    mes_y_global = document.getElementById("mes_loc_y").value;
+    mes_width = document.getElementById("mes_width").value;
+    mes_length = document.getElementById("mes_length").value;
+    mes_x = mes_x_global-deck_length/2;
+    mes_y = mes_y_global-deck_width/2;
+    let init_vars_mustering = addMusteringStation(mes_x,mes_y,mes_width,mes_length,0);
+    let mustering = init_vars_mustering.mustering;
+    let mustering_inner = init_vars_mustering.mustering_inner;
+    var  MusteringBB = init_vars_mustering.MusteringBB;
+  });
