@@ -270,8 +270,48 @@ function ShowDeck() {
   });
 
   $("#mes_loc_x").on("change", function() {
+    mes_x_global = document.getElementById("mes_loc_x").value;
+    mes_y_global = document.getElementById("mes_loc_y").value;
+    mes_width = document.getElementById("mes_width").value;
+    mes_length = document.getElementById("mes_length").value;
+    mes_x = mes_x_global-deck_length/2;
+    mes_y = mes_y_global-deck_width/2;
     scene.remove(mustering);
     scene.remove(mustering_inner);
+    
+    let init_vars_mustering = addMusteringStation(mes_x,mes_y,mes_width,mes_length,0);
+    let mustering = init_vars_mustering.mustering;
+    let mustering_inner = init_vars_mustering.mustering_inner;
+    var  MusteringBB = init_vars_mustering.MusteringBB;
+  });
+
+  $("#mes_loc_y").on("change", function() {
+    mes_x_global = document.getElementById("mes_loc_x").value;
+    mes_y_global = document.getElementById("mes_loc_y").value;
+    mes_width = document.getElementById("mes_width").value;
+    mes_length = document.getElementById("mes_length").value;
+    mes_x = mes_x_global-deck_length/2;
+    mes_y = mes_y_global-deck_width/2;
+    let init_vars_mustering = addMusteringStation(mes_x,mes_y,mes_width,mes_length,0);
+    let mustering = init_vars_mustering.mustering;
+    let mustering_inner = init_vars_mustering.mustering_inner;
+    var  MusteringBB = init_vars_mustering.MusteringBB;
+  });
+
+  $("#mes_width").on("change", function() {
+    mes_x_global = document.getElementById("mes_loc_x").value;
+    mes_y_global = document.getElementById("mes_loc_y").value;
+    mes_width = document.getElementById("mes_width").value;
+    mes_length = document.getElementById("mes_length").value;
+    mes_x = mes_x_global-deck_length/2;
+    mes_y = mes_y_global-deck_width/2;
+    let init_vars_mustering = addMusteringStation(mes_x,mes_y,mes_width,mes_length,0);
+    let mustering = init_vars_mustering.mustering;
+    let mustering_inner = init_vars_mustering.mustering_inner;
+    var  MusteringBB = init_vars_mustering.MusteringBB;
+  });
+
+  $("#mes_length").on("change", function() {
     mes_x_global = document.getElementById("mes_loc_x").value;
     mes_y_global = document.getElementById("mes_loc_y").value;
     mes_width = document.getElementById("mes_width").value;
