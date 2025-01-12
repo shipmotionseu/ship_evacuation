@@ -113,10 +113,10 @@ function addMusteringStation(mes_x,mes_y,mes_rows,mes_columns,deck_location_z) {
     // let mes_rows = 10;
     // let mes_columns = 5;
      const mustering = new THREE.Mesh(new THREE.BoxGeometry(mes_columns, mes_rows, 2.5), new THREE.MeshBasicMaterial({
-         color: 'red',
-         opacity: 0.5,
-         transparent: true
-     }));
+        color: 'red',
+        opacity: 0.5,
+        transparent: true
+    }));
      mustering.position.x = mes_x
      mustering.position.y = mes_y
      mustering.position.z = deck_location_z
@@ -163,12 +163,20 @@ function ShowDeck() {
 
       // This will prevent moving z axis, but will be on 0 line. change this to your object position of z axis.
   })
+
+ dragControls.addEventListener('dragend', function(event) {
+    console.log('dragend');
+    for (let i = 0; i < persons.length; i++) {
+        scene.remove(persons[i].geometry);
+    }
+    persons=createPerson(no_persons).persons;
+});
  //   dragControls.addEventListener('hoveron', function (event) { controls.enabled = false; });
  //   dragControls.addEventListener('hoveroff', function (event) { controls.enabled = true; });
  // controls.addEventListener('start', function (event) { dragControls.deactivate(); }); 
  // controls.addEventListener('end', function (event) { dragControls.activate(); });
 
-  //ShowDeck();
+  ShowDeck();
   requestAnimationFrame(animate);
 
   function animate() {
@@ -179,24 +187,46 @@ function ShowDeck() {
    
     for (let i = 0; i < persons.length; i++) {
         if (inMES[i] == 0) {
-            let delta_mes_x=0;
+            const person_outer=new THREE.Mesh(new THREE.BoxGeometry(1.5*0.4, 1.5*0.4, 1.8), new THREE.MeshBasicMaterial({
+                color: 'blue',
+                opacity: 1,
+                transparent: true
+            }));
+            scene.add(person_outer);
+            person_outer.position.x=persons[i].geometry.position.x;
+            person_outer.position.y=persons[i].geometry.position.y;
+            person_outer.position.z=persons[i].geometry.position.z;
+            let person_outerBB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
+            person_outerBB.setFromObject(person_outer);
+
+            let delta_mes_x=mustering_inner.position.x-persons[i].geometry.position.x;
+            let delta_mes_y=mustering_inner.position.y-persons[i].geometry.position.y;
+            let tgt=delta_mes_y/delta_mes_x;
+            let angle=Math.atan(tgt);
+
             let prev_x = persons[i].geometry.position.x;
             let prev_y = persons[i].geometry.position.y;
             let prev_z = persons[i].geometry.position.z;
           
-            persons[i].geometry.position.x = persons[i].geometry.position.x + deltaT * persons[i].speed;
+            let move=deltaT * persons[i].speed;
+            let move_x=move*Math.cos(angle);
+            let move_y=move*Math.sin(angle);
+
+            persons[i].geometry.position.x = prev_x + move_x;
+            persons[i].geometry.position.y = prev_y + move_y;
+
             persons[i].x.push(persons[i].geometry.position.x);
             persons[i].y.push(persons[i].geometry.position.y);
             persons[i].z.push(persons[i].geometry.position.z);
             persons[i].time.push(time_step);
             persons[i].BB.setFromObject(persons[i].geometry);
+            scene.remove(person_outer);
             if (MusteringBB.intersectsBox(persons[i].BB)) {
                 inMES[i] = 1;
-                delta_mes_x=0.5;
             }
         }
     }
 
     renderer.render(scene, camera);
-  controls.update();
+  //controls.update();
   }
