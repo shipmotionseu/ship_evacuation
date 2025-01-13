@@ -162,12 +162,8 @@ function ShowDeck() {
   const dragControls = new DragControls([mustering], camera, renderer.domElement);
   dragControls.addEventListener('drag', function(event) {
       console.log('drag');
-      mustering_inner.position.x = mustering.position.x;
-      mustering_inner.position.y = mustering.position.y;
-      mustering_inner.position.z = mustering.position.z;
-      MusteringBB.setFromObject(mustering_inner);
 
-      event.object.position.z = deck1_location_z; 
+      event.object.position.z = 0; 
 
       // This will prevent moving z axis, but will be on 0 line. change this to your object position of z axis.
   })
@@ -178,14 +174,14 @@ function ShowDeck() {
         scene.remove(persons[i].geometry);
     }
     persons=createPerson(no_persons).persons;
-    let init_vars_mustering = addMusteringStation(mustering.position.x,mustering.position.y,mes_width,mes_length,0);
-    let mustering = init_vars_mustering.mustering;
-    let mustering_inner = init_vars_mustering.mustering_inner;
-    var  MusteringBB = init_vars_mustering.MusteringBB;
-    document.getElementById("mes_loc_x").value = mustering.position.x+deck_length/2;
-    document.getElementById("mes_loc_y").value = mustering.position.y+deck_width/2;
-    document.getElementById("mes_width").value = mes_width;
-    document.getElementById("mes_length").value = mes_length;
+    mes_x = event.object.position.x;
+    mes_y = event.object.position.y;
+
+    mustering_inner.position.x = mustering.position.x;
+    mustering_inner.position.y = mustering.position.y;
+    mustering_inner.position.z = mustering.position.z;
+    MusteringBB.setFromObject(mustering_inner);
+
 
 });
  //   dragControls.addEventListener('hoveron', function (event) { controls.enabled = false; });
@@ -223,7 +219,7 @@ function ShowDeck() {
                 let prev_z = persons[i].geometry.position.z;
 
                 time_step+=deltaT;
-                
+
                 let move=deltaT * persons[i].speed;
                 let move_x=move*Math.cos(angle);
                 let move_y=move*Math.sin(angle);
