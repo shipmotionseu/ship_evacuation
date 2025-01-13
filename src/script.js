@@ -177,9 +177,8 @@ function ShowDeck() {
     mes_x = event.object.position.x;
     mes_y = event.object.position.y;
 
-    mustering_inner.position.x = mustering.position.x;
-    mustering_inner.position.y = mustering.position.y;
-    mustering_inner.position.z = mustering.position.z;
+    mustering_inner.position.x = mes_x;
+    mustering_inner.position.y = mes_y;
     MusteringBB.setFromObject(mustering_inner);
 
 
@@ -213,6 +212,7 @@ function ShowDeck() {
                 let delta_mes_y=mustering_inner.position.y-persons[i].geometry.position.y;
                 let tgt=delta_mes_y/delta_mes_x;
                 let angle=Math.atan(tgt);
+                console.log("angle: "+angle);
     
                 let prev_x = persons[i].geometry.position.x;
                 let prev_y = persons[i].geometry.position.y;
@@ -221,9 +221,9 @@ function ShowDeck() {
                 time_step+=deltaT;
 
                 let move=deltaT * persons[i].speed;
-                let move_x=move*Math.cos(angle);
-                let move_y=move*Math.sin(angle);
-    
+                let move_x=Math.sign(delta_mes_x)*move*Math.cos(angle);
+                let move_y=Math.sign(delta_mes_x)*move*Math.sin(angle);
+                console.log("move_x: "+move_x+" move_y: "+move_y);
                 persons[i].geometry.position.x = prev_x + move_x;
                 persons[i].geometry.position.y = prev_y + move_y;
                 persons[i].geometry.position.z = prev_z;
