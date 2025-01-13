@@ -20,6 +20,8 @@ class Human {
         this.time = [];
         this.dist = 0;
         this.BB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
+        this.signx = 1;
+        this.signy = 1;
     }
 }
 
@@ -221,6 +223,9 @@ function ShowDeck() {
     
         for (let i = 0; i < persons.length; i++) {
             if (inMES[i] == 0) {
+                persons[i].signx = 1;
+                persons[i].signy = 1;
+                let test_dist = 1;
                 const person_outer=new THREE.Mesh(new THREE.BoxGeometry(1.5*0.4, 1.5*0.4, 1.8), new THREE.MeshBasicMaterial({
                     color: 'blue',
                     opacity: 1,
@@ -236,7 +241,6 @@ function ShowDeck() {
                 let delta_mes_y=mustering_inner.position.y-persons[i].geometry.position.y;
                 let tgt=delta_mes_y/delta_mes_x;
                 let angle=Math.atan(tgt);
-                console.log("angle: "+angle);
     
                 let prev_x = persons[i].geometry.position.x;
                 let prev_y = persons[i].geometry.position.y;
@@ -247,15 +251,49 @@ function ShowDeck() {
                 let move=deltaT * persons[i].speed;
                 let move_x=Math.sign(delta_mes_x)*move*Math.cos(angle);
                 let move_y=Math.sign(delta_mes_x)*move*Math.sin(angle);
-                console.log("move_x: "+move_x+" move_y: "+move_y);
+
                 person_outer.position.x = prev_x + move_x;
                 person_outer.position.y = prev_y + move_y;
                 let person_outerBB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
                 person_outerBB.setFromObject(person_outer);      
-                if (!compartmentsBB[0].intersectsBox(person_outerBB)) {
+                if (compartmentsBB[0].intersectsBox(person_outerBB)) {
+                    console.log("Person "+i+" is in compartment");
+                    const positionAtrribute=compartments[0].geometry.attributes.position;
+                    let closestVertex = new THREE.Vector3();
+                    let minDistance = Infinity;
+                    const tempVector = new THREE.Vector3();
+                    for (let w = 0; w < positionAtrribute.count; w++) {
+                        tempVector.fromBufferAttribute(positionAtrribute, w);
+                        compartments[0].localToWorld(tempVector);
+                        const distance = tempVector.distanceTo(person_outer.position);
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            closestVertex = tempVector;
+                        }
+                    }
+                    if (person_outer.position.y<closestVertex.y) {
+                        person_outer.position.y = prev_y + move;
+                        test_dist=1;
+                    }
+                    else {
+                        person_outer.position.y = prev_y - move;
+                        test_dist=-1;
+                    }
+   
+                    person_outer.position.x = prev_x;
 
-                persons[i].geometry.position.x = prev_x + move_x;
-                persons[i].geometry.position.y = prev_y + move_y;
+                    let person_outerBB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
+                    person_outerBB.setFromObject(person_outer);      
+                    if (!compartmentsBB[0].intersectsBox(person_outerBB)) {
+                        persons[i].signx=0;
+                        persons[i].signy=Math.sign(test_dist);
+                        move_y=move;
+                    }
+            }
+
+
+                persons[i].geometry.position.x = prev_x + persons[i].signx*move_x;
+                persons[i].geometry.position.y = prev_y + persons[i].signy*move_y;
                 persons[i].geometry.position.z = prev_z;
             
                 let walk_dist = Math.sqrt(Math.pow(move_x,2)+Math.pow(move_y,2)); 
@@ -271,11 +309,7 @@ function ShowDeck() {
                 if (MusteringBB.intersectsBox(persons[i].BB)) {
                     inMES[i] = 1;
                 }
-            }
-            else
-            {
-                
-            }
+
             }
         }
     
