@@ -72,10 +72,10 @@ let deck_width=34;
 
 let person_size_x=0.4
 let person_size_y=0.4
-let mes_x_global = document.getElementById("mes_loc_x").value;
-let mes_y_global = document.getElementById("mes_loc_y").value;
-let mes_width = document.getElementById("mes_width").value;
-let mes_length = document.getElementById("mes_length").value;
+let mes_x_global = 105; 
+let mes_y_global = 17;
+let mes_width = 10;
+let mes_length = 5;
 let mes_x = mes_x_global-deck_length/2;
 let mes_y = mes_y_global-deck_width/2;
 
@@ -83,15 +83,15 @@ let deltaT = 0;
 let clock = new THREE.Clock();
 let time_step=0;
 let persons = [];
-let inMES = []
+let inMES = [];
 
 let init_vars_scene = createEmptyScene();
 let scene = init_vars_scene.scene;
 let camera = init_vars_scene.camera;
 let renderer = init_vars_scene.renderer;
+persons=createPerson(no_persons).persons;
 //let controls = init_vars_scene.controls;
-let init_vars_deck = createDeck(deck_length,deck_width,0);
-let deck = init_vars_deck.deck;
+
 
 function createPerson(no_persons) {
     for (let i = 0; i <= no_persons - 1; i++) {
@@ -101,7 +101,7 @@ function createPerson(no_persons) {
         persons[i].speed = 5 + getRandomInt(4);
         persons[i].geometry.position.x =-30 + getRandomInt(5) - 2.5;
         persons[i].geometry.position.y = getRandomInt(18) - 8;
-        persons[i].x[0] = persons[i].geometry.position.x;
+        persons[i].x[0] = persons[i].geometry.position.x+deck_length/2;
         persons[i].y[0] = persons[i].geometry.position.y;
         persons[i].z[0] = persons[i].geometry.position.z;
         persons[i].time[0] = 0;
@@ -147,16 +147,17 @@ function addMusteringStation(mes_x,mes_y,mes_rows,mes_columns,deck_location_z) {
         };
     }
 
-persons=createPerson(no_persons).persons;
 
-let init_vars_mustering = addMusteringStation(mes_x,mes_y,mes_width,mes_length,0);
-let mustering = init_vars_mustering.mustering;
-let mustering_inner = init_vars_mustering.mustering_inner;
-var  MusteringBB = init_vars_mustering.MusteringBB;
 
 function ShowDeck() {
     renderer.render(scene, camera);
   }
+  let init_vars_deck = createDeck(deck_length,deck_width,0);
+  let deck = init_vars_deck.deck;
+  let init_vars_mustering = addMusteringStation(mes_x,mes_y,mes_width,mes_length,0);
+  let mustering = init_vars_mustering.mustering;
+  let mustering_inner = init_vars_mustering.mustering_inner;
+  var  MusteringBB = init_vars_mustering.MusteringBB;
 
   const dragControls = new DragControls([mustering], camera, renderer.domElement);
   dragControls.addEventListener('drag', function(event) {
@@ -192,60 +193,84 @@ function ShowDeck() {
  // controls.addEventListener('start', function (event) { dragControls.deactivate(); }); 
  // controls.addEventListener('end', function (event) { dragControls.activate(); });
 
-  ShowDeck();
-  requestAnimationFrame(animate);
-
   function animate() {
     deltaT = clock.getDelta();
     if (inMES.includes(0)) {
         requestAnimationFrame(animate);
-    }
-   
-    for (let i = 0; i < persons.length; i++) {
-        if (inMES[i] == 0) {
-            const person_outer=new THREE.Mesh(new THREE.BoxGeometry(1.5*0.4, 1.5*0.4, 1.8), new THREE.MeshBasicMaterial({
-                color: 'blue',
-                opacity: 1,
-                transparent: true
-            }));
-            scene.add(person_outer);
-            person_outer.position.x=persons[i].geometry.position.x;
-            person_outer.position.y=persons[i].geometry.position.y;
-            person_outer.position.z=persons[i].geometry.position.z;
-            let person_outerBB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
-            person_outerBB.setFromObject(person_outer);
-
-            let delta_mes_x=mustering_inner.position.x-persons[i].geometry.position.x;
-            let delta_mes_y=mustering_inner.position.y-persons[i].geometry.position.y;
-            let tgt=delta_mes_y/delta_mes_x;
-            let angle=Math.atan(tgt);
-
-            let prev_x = persons[i].geometry.position.x;
-            let prev_y = persons[i].geometry.position.y;
-            let prev_z = persons[i].geometry.position.z;
-          
-            let move=deltaT * persons[i].speed;
-            let move_x=move*Math.cos(angle);
-            let move_y=move*Math.sin(angle);
-
-            persons[i].geometry.position.x = prev_x + move_x;
-            persons[i].geometry.position.y = prev_y + move_y;
-
-            persons[i].x.push(persons[i].geometry.position.x);
-            persons[i].y.push(persons[i].geometry.position.y);
-            persons[i].z.push(persons[i].geometry.position.z);
-            persons[i].time.push(time_step);
-            persons[i].BB.setFromObject(persons[i].geometry);
-            scene.remove(person_outer);
-            if (MusteringBB.intersectsBox(persons[i].BB)) {
-                inMES[i] = 1;
+    
+        for (let i = 0; i < persons.length; i++) {
+            if (inMES[i] == 0) {
+                const person_outer=new THREE.Mesh(new THREE.BoxGeometry(1.5*0.4, 1.5*0.4, 1.8), new THREE.MeshBasicMaterial({
+                    color: 'blue',
+                    opacity: 1,
+                    transparent: true
+                }));
+                scene.add(person_outer);
+                person_outer.position.x=persons[i].geometry.position.x;
+                person_outer.position.y=persons[i].geometry.position.y;
+                person_outer.position.z=persons[i].geometry.position.z;
+                let person_outerBB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
+                person_outerBB.setFromObject(person_outer);
+    
+                let delta_mes_x=mustering_inner.position.x-persons[i].geometry.position.x;
+                let delta_mes_y=mustering_inner.position.y-persons[i].geometry.position.y;
+                let tgt=delta_mes_y/delta_mes_x;
+                let angle=Math.atan(tgt);
+    
+                let prev_x = persons[i].geometry.position.x;
+                let prev_y = persons[i].geometry.position.y;
+                let prev_z = persons[i].geometry.position.z;
+              
+                let move=deltaT * persons[i].speed;
+                let move_x=move*Math.cos(angle);
+                let move_y=move*Math.sin(angle);
+    
+                persons[i].geometry.position.x = prev_x + move_x;
+                persons[i].geometry.position.y = prev_y + move_y;
+    
+                persons[i].x.push(persons[i].geometry.position.x+deck_length/2);
+                persons[i].y.push(persons[i].geometry.position.y);
+                persons[i].z.push(persons[i].geometry.position.z);
+                persons[i].time.push(time_step);
+                persons[i].BB.setFromObject(persons[i].geometry);
+                scene.remove(person_outer);
+                if (MusteringBB.intersectsBox(persons[i].BB)) {
+                    inMES[i] = 1;
+                }
             }
         }
+    
+        renderer.render(scene, camera);
     }
-
-    renderer.render(scene, camera);
+    else {
+        console.log("All persons are in MES")
+        $("#plotFigure").prop("disabled", false);
+        $("#saveResultCSV").prop("disabled", false);
+        $("#saveResultJSON").prop("disabled", false);
+        $("#startSim").prop("disabled", false);
+        renderer.setAnimationLoop(null);
+    }
+   
   //controls.update();
   };
+
+  $("#startSim").on("click", function() {
+    $("#plotFigure").prop("disabled", true);
+    $("#saveResultCSV").prop("disabled", true);
+    $("#saveResultJSON").prop("disabled", true);
+    $("#startSim").prop("disabled", true);
+    let init_vars_deck = createDeck(deck_length,deck_width,0);
+    let deck = init_vars_deck.deck;
+    let init_vars_mustering = addMusteringStation(mes_x,mes_y,mes_width,mes_length,0);
+    let mustering = init_vars_mustering.mustering;
+    let mustering_inner = init_vars_mustering.mustering_inner;
+    var  MusteringBB = init_vars_mustering.MusteringBB;
+    
+    console.log("start")
+    //renderer.setAnimationLoop(animate);
+    animate();
+    console.log("end")
+});
 
   $("#no_persons").on("change", function() {
     const div = document.getElementById('IDresults');
@@ -269,57 +294,19 @@ function ShowDeck() {
 
   });
 
-  $("#mes_loc_x").on("change", function() {
-    mes_x_global = document.getElementById("mes_loc_x").value;
-    mes_y_global = document.getElementById("mes_loc_y").value;
-    mes_width = document.getElementById("mes_width").value;
-    mes_length = document.getElementById("mes_length").value;
-    mes_x = mes_x_global-deck_length/2;
-    mes_y = mes_y_global-deck_width/2;
-    scene.remove(mustering);
-    scene.remove(mustering_inner);
-    
-    let init_vars_mustering = addMusteringStation(mes_x,mes_y,mes_width,mes_length,0);
-    let mustering = init_vars_mustering.mustering;
-    let mustering_inner = init_vars_mustering.mustering_inner;
-    var  MusteringBB = init_vars_mustering.MusteringBB;
-  });
+  $("#plotFigure").on("click", function() {
+    for (let i = 0; i < no_persons; i++) {
+        let TESTER = document.getElementById('movment2D');
+        var data = []
+        for (let i = 0; i < no_persons; i++) {
+            data.push({
+                x: persons[i].x,
+                y: persons[i].y,
+                mode: 'lines',
+                name: 'person ' + String(i + 1)
+            })
+        }
 
-  $("#mes_loc_y").on("change", function() {
-    mes_x_global = document.getElementById("mes_loc_x").value;
-    mes_y_global = document.getElementById("mes_loc_y").value;
-    mes_width = document.getElementById("mes_width").value;
-    mes_length = document.getElementById("mes_length").value;
-    mes_x = mes_x_global-deck_length/2;
-    mes_y = mes_y_global-deck_width/2;
-    let init_vars_mustering = addMusteringStation(mes_x,mes_y,mes_width,mes_length,0);
-    let mustering = init_vars_mustering.mustering;
-    let mustering_inner = init_vars_mustering.mustering_inner;
-    var  MusteringBB = init_vars_mustering.MusteringBB;
-  });
-
-  $("#mes_width").on("change", function() {
-    mes_x_global = document.getElementById("mes_loc_x").value;
-    mes_y_global = document.getElementById("mes_loc_y").value;
-    mes_width = document.getElementById("mes_width").value;
-    mes_length = document.getElementById("mes_length").value;
-    mes_x = mes_x_global-deck_length/2;
-    mes_y = mes_y_global-deck_width/2;
-    let init_vars_mustering = addMusteringStation(mes_x,mes_y,mes_width,mes_length,0);
-    let mustering = init_vars_mustering.mustering;
-    let mustering_inner = init_vars_mustering.mustering_inner;
-    var  MusteringBB = init_vars_mustering.MusteringBB;
-  });
-
-  $("#mes_length").on("change", function() {
-    mes_x_global = document.getElementById("mes_loc_x").value;
-    mes_y_global = document.getElementById("mes_loc_y").value;
-    mes_width = document.getElementById("mes_width").value;
-    mes_length = document.getElementById("mes_length").value;
-    mes_x = mes_x_global-deck_length/2;
-    mes_y = mes_y_global-deck_width/2;
-    let init_vars_mustering = addMusteringStation(mes_x,mes_y,mes_width,mes_length,0);
-    let mustering = init_vars_mustering.mustering;
-    let mustering_inner = init_vars_mustering.mustering_inner;
-    var  MusteringBB = init_vars_mustering.MusteringBB;
-  });
+        Plotly.newPlot(TESTER, data);
+    }
+});

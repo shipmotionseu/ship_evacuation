@@ -17,6 +17,7 @@
     
 <body>
   <script src="https://code.jquery.com/jquery-3.7.0.js"></script>
+  <script src="https://cdn.plot.ly/plotly-2.25.2.min.js" charset="utf-8"></script>
   <div id="main" style="width:95%;border:1px solid grey; padding:20px; font-family:Helvetica, sans-serif; margin: 0 auto;">
 <h1>Ship Corridor Creator</h1> 
 <div>
@@ -40,19 +41,17 @@
       div.appendChild(para);
   }   
   </script>
-<p></p>
-<div>Location of musterting stations:
-  <div>Center x: <input id="mes_loc_x" type="number" value="50" /></div>
-  <div>Center y: <input id="mes_loc_y" type="number" value="17" /></div>
-  <div>Width:    <input id="mes_width" type="number" value="10" /></div>
-  <div>Length:   <input id="mes_length" type="number" value="5" /></div>
+<p><button id="startSim" type="button">START</button>
+  <button id="plotFigure" type="button" disabled>Plot results!</button>
+  <button id="saveResultCSV" type="button" disabled>Save results to CSV!</button>
+  <button id="saveResultJSON" type="button" disabled>Save results to JSON!</button></p>
   <script>
-  let mes_x_global = document.getElementById("mes_loc_x").value;
-  let mes_y_global = document.getElementById("mes_loc_y").value;
-  let mes_width = document.getElementById("mes_width").value;
-  let mes_length = document.getElementById("mes_length").value;
+      document.getElementById("plotFigure").disabled = true;
+      document.getElementById("saveResultCSV").disabled = true;
+      document.getElementById("saveResultJSON").disabled = true;
+      document.getElementById("startSim").disabled = false;
   </script>
-</div>
+<p><div id='movment2D' style="width:100%;border:1px solid rgb(0, 255, 0)"><!--Plotly will be drawn inside this DIV --></div></p>
 <p><div id='movment3D' style="width:100%;border:1px solid rgb(255, 0, 0)"><!--Three.js will be drawn inside this DIV --></div></p>
 <script type="module" src="src/script.js"></script>
 </div>
