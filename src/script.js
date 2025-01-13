@@ -100,7 +100,7 @@ function createPerson(no_persons) {
         })));
         persons[i].speed = 5 + getRandomInt(4);
         persons[i].geometry.position.x =-30 + getRandomInt(5) - 2.5;
-        persons[i].geometry.position.y = getRandomInt(18) - 8;
+        persons[i].geometry.position.y = getRandomInt(deck_width) - (deck_width / 2-2);
         persons[i].x[0] = persons[i].geometry.position.x+deck_length/2;
         persons[i].y[0] = persons[i].geometry.position.y;
         persons[i].z[0] = persons[i].geometry.position.z;
@@ -206,6 +206,7 @@ function ShowDeck() {
                     transparent: true
                 }));
                 scene.add(person_outer);
+                time_step+=deltaT;
                 person_outer.position.x=persons[i].geometry.position.x;
                 person_outer.position.y=persons[i].geometry.position.y;
                 person_outer.position.z=persons[i].geometry.position.z;
@@ -227,6 +228,7 @@ function ShowDeck() {
     
                 persons[i].geometry.position.x = prev_x + move_x;
                 persons[i].geometry.position.y = prev_y + move_y;
+                persons[i].geometry.position.z = prev_z;
     
                 persons[i].x.push(persons[i].geometry.position.x+deck_length/2);
                 persons[i].y.push(persons[i].geometry.position.y);
@@ -309,4 +311,24 @@ function ShowDeck() {
 
         Plotly.newPlot(TESTER, data);
     }
+});
+
+
+$("#saveResultCSV").on("click", function() {
+    for (let i = 0; i < no_persons; i++) {
+        let results_textline = "time;x;y;z\n";
+        console.log("person "+i+" movment points");
+        for (let j = 0; j < persons[i].x.length; j++) {
+            results_textline+=String(persons[i].time[j]+";"+persons[i].x[j])+";"+String(persons[i].y[j])+";"+String(persons[i].z[j])+"\n";
+        }
+    var myFile = new File([results_textline], "movment_points_person_"+String(i+1)+".csv", {
+        type: "text/plain;charset=utf-8"
+    });
+    console.log("save file for person "+i);
+    saveAs(myFile);
+}
+});
+
+$("#saveResultJSON").on("click", function() {
+
 });
