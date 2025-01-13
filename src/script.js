@@ -206,7 +206,7 @@ function ShowDeck() {
                     transparent: true
                 }));
                 scene.add(person_outer);
-                time_step+=deltaT;
+
                 person_outer.position.x=persons[i].geometry.position.x;
                 person_outer.position.y=persons[i].geometry.position.y;
                 person_outer.position.z=persons[i].geometry.position.z;
@@ -221,7 +221,9 @@ function ShowDeck() {
                 let prev_x = persons[i].geometry.position.x;
                 let prev_y = persons[i].geometry.position.y;
                 let prev_z = persons[i].geometry.position.z;
-              
+
+                time_step+=deltaT;
+                
                 let move=deltaT * persons[i].speed;
                 let move_x=move*Math.cos(angle);
                 let move_y=move*Math.sin(angle);
@@ -229,7 +231,11 @@ function ShowDeck() {
                 persons[i].geometry.position.x = prev_x + move_x;
                 persons[i].geometry.position.y = prev_y + move_y;
                 persons[i].geometry.position.z = prev_z;
-    
+            
+                let walk_dist = Math.sqrt(Math.pow(move_x,2)+Math.pow(move_y,2)); 
+                persons[i].dist+=walk_dist;
+                document.getElementById("movment"+String(i+1)).innerText = persons[i].dist;   
+
                 persons[i].x.push(persons[i].geometry.position.x+deck_length/2);
                 persons[i].y.push(persons[i].geometry.position.y);
                 persons[i].z.push(persons[i].geometry.position.z);
