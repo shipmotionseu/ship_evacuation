@@ -64,6 +64,29 @@ function createDeck(deck_length,deck_width,deck_location_z) {
         deck,
     };
 };
+
+function createCompartments() {
+    let compartments = [];
+    let compartmentsBB = [];
+    for (let i = 0; i < 1; i++) {
+        const compartment = new THREE.Mesh(new THREE.BoxGeometry(10, 20, 2), new THREE.MeshBasicMaterial({
+            color: 'yellow',
+        }));
+        compartment.position.x = 0;
+        compartment.position.y = 0;
+        compartment.position.z = 0;
+        const compartmentBB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
+        compartmentBB.setFromObject(compartment);
+
+        scene.add(compartment);
+        compartments.push(compartment);
+        compartmentsBB.push(compartmentBB);
+    }
+    return {
+        compartments,
+        compartmentsBB
+    };
+}
 const person_colors = ['#006400', '#008000', '#556B2F', '#228B22', '#2E8B57', '#808000', '#6B8E23', '#3CB371', '#32CD32', '#00FF00', '#00FF7F', '#00FA9A', '#8FBC8F', '#66CDAA', '#9ACD32', '#7CFC00', '#7FFF00', '#90EE90', '#ADFF2F', '#98FB98']
 
 
@@ -154,6 +177,9 @@ function ShowDeck() {
   }
   let init_vars_deck = createDeck(deck_length,deck_width,0);
   let deck = init_vars_deck.deck;
+  let init_vars_compartments = createCompartments();
+    let compartments = init_vars_compartments.compartments;
+  let compartmentsBB = init_vars_compartments.compartmentsBB;
   let init_vars_mustering = addMusteringStation(mes_x,mes_y,mes_width,mes_length,0);
   let mustering = init_vars_mustering.mustering;
   let mustering_inner = init_vars_mustering.mustering_inner;
@@ -205,8 +231,6 @@ function ShowDeck() {
                 person_outer.position.x=persons[i].geometry.position.x;
                 person_outer.position.y=persons[i].geometry.position.y;
                 person_outer.position.z=persons[i].geometry.position.z;
-                let person_outerBB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
-                person_outerBB.setFromObject(person_outer);
     
                 let delta_mes_x=mustering_inner.position.x-persons[i].geometry.position.x;
                 let delta_mes_y=mustering_inner.position.y-persons[i].geometry.position.y;
@@ -224,6 +248,12 @@ function ShowDeck() {
                 let move_x=Math.sign(delta_mes_x)*move*Math.cos(angle);
                 let move_y=Math.sign(delta_mes_x)*move*Math.sin(angle);
                 console.log("move_x: "+move_x+" move_y: "+move_y);
+                person_outer.position.x = prev_x + move_x;
+                person_outer.position.y = prev_y + move_y;
+                let person_outerBB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
+                person_outerBB.setFromObject(person_outer);      
+                if (!compartmentsBB[0].intersectsBox(person_outerBB)) {
+
                 persons[i].geometry.position.x = prev_x + move_x;
                 persons[i].geometry.position.y = prev_y + move_y;
                 persons[i].geometry.position.z = prev_z;
@@ -241,6 +271,11 @@ function ShowDeck() {
                 if (MusteringBB.intersectsBox(persons[i].BB)) {
                     inMES[i] = 1;
                 }
+            }
+            else
+            {
+                
+            }
             }
         }
     
@@ -264,6 +299,7 @@ function ShowDeck() {
     $("#saveResultJSON").prop("disabled", true);
     $("#startSim").prop("disabled", true);
     let init_vars_deck = createDeck(deck_length,deck_width,0);
+    let init_vars_compartments = createCompartments();
     let deck = init_vars_deck.deck;
     let init_vars_mustering = addMusteringStation(mes_x,mes_y,mes_width,mes_length,0);
     let mustering = init_vars_mustering.mustering;
