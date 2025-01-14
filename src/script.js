@@ -70,12 +70,12 @@ function createDeck(deck_length,deck_width,deck_location_z) {
 function createCompartments() {
     let compartments = [];
     let compartmentsBB = [];
-    for (let i = 0; i < 1; i++) {
+    for (let i = 0; i < 3; i++) {
         const compartment = new THREE.Mesh(new THREE.BoxGeometry(10, 20, 2), new THREE.MeshBasicMaterial({
             color: 'yellow',
         }));
-        compartment.position.x = 0;
-        compartment.position.y = 0;
+        compartment.position.x = (i-1)*30;
+        compartment.position.y = (i-1)*4;
         compartment.position.z = 0;
         const compartmentBB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
         compartmentBB.setFromObject(compartment);
@@ -124,8 +124,8 @@ function createPerson(no_persons) {
             color: person_colors[i % person_colors.length],
         })));
         persons[i].speed = 5 + getRandomInt(4);
-        persons[i].geometry.position.x =-30 + getRandomInt(5) - 2.5;
-        persons[i].geometry.position.y = getRandomInt(deck_width) - (deck_width / 2-2);
+        persons[i].geometry.position.x =-40 + getRandomInt(5) - 2.5;
+        persons[i].geometry.position.y = getRandomInt(deck_width) - (deck_width / 2);
         persons[i].x[0] = persons[i].geometry.position.x+deck_length/2;
         persons[i].y[0] = persons[i].geometry.position.y;
         persons[i].z[0] = persons[i].geometry.position.z;
