@@ -286,8 +286,41 @@ function ShowDeck() {
                     person_outerBB.setFromObject(person_outer);      
                     if (!compartmentsBB[0].intersectsBox(person_outerBB)) {
                         persons[i].signx=0;
-                        persons[i].signy=Math.sign(test_dist);
+                        persons[i].signy=1;
                         move_y=move;
+                    }
+                    else{
+                        person_outer.position.y=prev_y
+                        const positionAtrribute=compartments[0].geometry.attributes.position;
+                        let closestVertex = new THREE.Vector3();
+                        let minDistance = Infinity;
+                        const tempVector = new THREE.Vector3();
+                        for (let w = 0; w < positionAtrribute.count; w++) {
+                            tempVector.fromBufferAttribute(positionAtrribute, w);
+                            compartments[0].localToWorld(tempVector);
+                            const distance = tempVector.distanceTo(person_outer.position);
+                            if (distance < minDistance) {
+                                minDistance = distance;
+                                closestVertex = tempVector;
+                            }
+                        }
+                        if (person_outer.position.x<closestVertex.x) {
+                            person_outer.position.x = prev_x + move;
+                            test_dist=1;
+                        }
+                        else {
+                            person_outer.position.x = prev_x - move;
+                            test_dist=-1;
+                        }
+    
+                        let person_outerBB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
+                        person_outerBB.setFromObject(person_outer);      
+                        if (!compartmentsBB[0].intersectsBox(person_outerBB)) {
+                            persons[i].signx=1;
+                            persons[i].signy=0;
+                            move_x=move;
+                        }
+
                     }
             }
 
