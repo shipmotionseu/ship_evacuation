@@ -60,10 +60,12 @@ function createDeck(deck_length,deck_width,deck_location_z) {
         color: 'lightblue'
     }));
     deck.position.z = deck_location_z
-
+    const deckBB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
+    deckBB.setFromObject(deck);
     scene.add(deck);
     return {
         deck,
+        deckBB
     };
 };
 
@@ -124,6 +126,7 @@ function createPerson(no_persons) {
             color: person_colors[i % person_colors.length],
         })));
         persons[i].speed = 5 + getRandomInt(4);
+        do {
         persons[i].geometry.position.x =-40 + getRandomInt(5) - 2.5;
         persons[i].geometry.position.y = getRandomInt(deck_width) - (deck_width / 2);
         persons[i].x[0] = persons[i].geometry.position.x+deck_length/2;
@@ -131,7 +134,10 @@ function createPerson(no_persons) {
         persons[i].z[0] = persons[i].geometry.position.z;
         persons[i].time[0] = 0;
         persons[i].BB.setFromObject(persons[i].geometry);
+        }
+        while (!deckBB[c].intersectsBox(person_outerBB))
         inMES[i] = 0;
+        
     }
 
     for (let i = 0; i < no_persons; i++) {
@@ -179,6 +185,7 @@ function ShowDeck() {
   }
   let init_vars_deck = createDeck(deck_length,deck_width,0);
   let deck = init_vars_deck.deck;
+  let deckBB=init_vars_deck.deckBB;
   let init_vars_compartments = createCompartments();
     let compartments = init_vars_compartments.compartments;
   let compartmentsBB = init_vars_compartments.compartmentsBB;
