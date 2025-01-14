@@ -135,7 +135,7 @@ function createPerson(no_persons) {
         persons[i].time[0] = 0;
         persons[i].BB.setFromObject(persons[i].geometry);
         }
-        while (!deckBB[c].intersectsBox(person_outerBB))
+        while (!deckBB.intersectsBox(person_outerBB))
         inMES[i] = 0;
         
     }
