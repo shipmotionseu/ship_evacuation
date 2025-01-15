@@ -116,7 +116,9 @@ let init_vars_scene = createEmptyScene();
 let scene = init_vars_scene.scene;
 let camera = init_vars_scene.camera;
 let renderer = init_vars_scene.renderer;
-persons=createPerson(no_persons).persons;
+
+let deckBB = [];
+
 //let controls = init_vars_scene.controls;
 
 
@@ -135,7 +137,7 @@ function createPerson(no_persons) {
         persons[i].time[0] = 0;
         persons[i].BB.setFromObject(persons[i].geometry);
         }
-        while (!deckBB.intersectsBox(person_outerBB))
+        while (!deckBB.intersectsBox(persons[i].BB))
         inMES[i] = 0;
         
     }
@@ -185,7 +187,7 @@ function ShowDeck() {
   }
   let init_vars_deck = createDeck(deck_length,deck_width,0);
   let deck = init_vars_deck.deck;
-  let deckBB=init_vars_deck.deckBB;
+  deckBB=init_vars_deck.deckBB;
   let init_vars_compartments = createCompartments();
     let compartments = init_vars_compartments.compartments;
   let compartmentsBB = init_vars_compartments.compartmentsBB;
@@ -193,7 +195,7 @@ function ShowDeck() {
   let mustering = init_vars_mustering.mustering;
   let mustering_inner = init_vars_mustering.mustering_inner;
   var  MusteringBB = init_vars_mustering.MusteringBB;
-
+  persons=createPerson(no_persons).persons;
   const dragControls = new DragControls([mustering], camera, renderer.domElement);
   dragControls.addEventListener('drag', function(event) {
       console.log('drag');
