@@ -220,10 +220,6 @@ function ShowDeck() {
 
 
 });
- //   dragControls.addEventListener('hoveron', function (event) { controls.enabled = false; });
- //   dragControls.addEventListener('hoveroff', function (event) { controls.enabled = true; });
- // controls.addEventListener('start', function (event) { dragControls.deactivate(); }); 
- // controls.addEventListener('end', function (event) { dragControls.activate(); });
 
   function animate() {
     deltaT = clock.getDelta();
