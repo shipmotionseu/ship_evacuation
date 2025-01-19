@@ -228,9 +228,10 @@ function ShowDeck() {
     
         for (let i = 0; i < persons.length; i++) {
             if (inMES[i] == 0) {
-                persons[i].signx = 1;
-                persons[i].signy = 1;
                 let test_dist = 1;
+                let walk_dist = 0;
+                let inCorridor = 1;
+
                 const person_outer=new THREE.Mesh(new THREE.BoxGeometry(1.5*0.4, 1.5*0.4, 1.8), new THREE.MeshBasicMaterial({
                     color: 'blue',
                     opacity: 1,
@@ -259,83 +260,43 @@ function ShowDeck() {
 
                 person_outer.position.x = prev_x + move_x;
                 person_outer.position.y = prev_y + move_y;
+                let closestVertex = new THREE.Vector3();
                 let person_outerBB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
                 person_outerBB.setFromObject(person_outer);      
                 for (let c=0; c<compartments.length; c++) {
-                if (compartmentsBB[c].intersectsBox(person_outerBB)) {
-                    console.log("Person "+i+" is in compartment");
-                    const positionAtrribute=compartments[c].geometry.attributes.position;
-                    let closestVertex = new THREE.Vector3();
-                    let minDistance = Infinity;
-                    const tempVector = new THREE.Vector3();
-                    for (let w = 0; w < positionAtrribute.count; w++) {
-                        tempVector.fromBufferAttribute(positionAtrribute, w);
-                        compartments[c].localToWorld(tempVector);
-                        const distance = tempVector.distanceTo(person_outer.position);
-                        if (distance < minDistance) {
-                            minDistance = distance;
-                            closestVertex = tempVector;
-                        }
-                    }
-                    if (person_outer.position.y<closestVertex.y) {
-                        person_outer.position.y = prev_y + move;
-                        test_dist=1;
-                    }
-                    else {
-                        person_outer.position.y = prev_y - move;
-                        test_dist=-1;
-                    }
-   
-                    person_outer.position.x = prev_x;
-
-                    let person_outerBB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
-                    person_outerBB.setFromObject(person_outer);      
-                    if (!compartmentsBB[c].intersectsBox(person_outerBB)) {
-                        persons[i].signx=0;
-                        persons[i].signy=1;
-                        move_y=move;
-                    }
-                    else{
-                        person_outer.position.y=prev_y
+                    if (compartmentsBB[c].intersectsBox(person_outerBB)) {
+                        inCorridor = 0;
+                        console.log("Person "+i+" is in compartment "+c);
                         const positionAtrribute=compartments[c].geometry.attributes.position;
-                        let closestVertex = new THREE.Vector3();
                         let minDistance = Infinity;
                         const tempVector = new THREE.Vector3();
                         for (let w = 0; w < positionAtrribute.count; w++) {
                             tempVector.fromBufferAttribute(positionAtrribute, w);
-                            compartments[0].localToWorld(tempVector);
+                            compartments[c].localToWorld(tempVector);
                             const distance = tempVector.distanceTo(person_outer.position);
                             if (distance < minDistance) {
                                 minDistance = distance;
                                 closestVertex = tempVector;
                             }
                         }
-                        if (person_outer.position.x<closestVertex.x) {
-                            person_outer.position.x = prev_x + move;
-                            test_dist=1;
-                        }
-                        else {
-                            person_outer.position.x = prev_x - move;
-                            test_dist=-1;
-                        }
-    
-                        let person_outerBB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
-                        person_outerBB.setFromObject(person_outer);      
-                        if (!compartmentsBB[c].intersectsBox(person_outerBB)) {
-                            persons[i].signx=1;
-                            persons[i].signy=0;
-                            move_x=move;
-                        }
 
-                    }
-            }
-        }
+                    };
+                    
+                };
+                if (inCorridor == 1) {
+                    persons[i].geometry.position.x = prev_x + persons[i].signx*move_x;
+                    persons[i].geometry.position.y = prev_y + persons[i].signy*move_y;
+                    persons[i].geometry.position.z = prev_z;
+                    walk_dist = Math.sqrt(Math.pow(move_x,2)+Math.pow(move_y,2)); 
+                }
+                else {
+                console.log(closestVertex);
 
-                persons[i].geometry.position.x = prev_x + persons[i].signx*move_x;
-                persons[i].geometry.position.y = prev_y + persons[i].signy*move_y;
-                persons[i].geometry.position.z = prev_z;
+                console.log("Person "+i+" is in compartment and is moving "+ move_x+" in x direction " +move_y+" in y direction");
+                };
+
             
-                let walk_dist = Math.sqrt(Math.pow(move_x,2)+Math.pow(move_y,2)); 
+                
                 persons[i].dist+=walk_dist;
                 document.getElementById("movment"+String(i+1)).innerText = persons[i].dist;   
 
@@ -360,6 +321,7 @@ function ShowDeck() {
         $("#saveResultCSV").prop("disabled", false);
         $("#saveResultJSON").prop("disabled", false);
         $("#startSim").prop("disabled", false);
+        $("#startSim").prop("disabled", true);
         renderer.setAnimationLoop(null);
     }
    
