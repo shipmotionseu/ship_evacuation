@@ -72,7 +72,7 @@ function createDeck(deck_length,deck_width,deck_location_z) {
 function createCompartments() {
     let compartments = [];
     let compartmentsBB = [];
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 2; i++) {
         const compartment = new THREE.Mesh(new THREE.BoxGeometry(10, 20, 2), new THREE.MeshBasicMaterial({
             color: 'yellow',
         }));
@@ -336,7 +336,10 @@ function ShowDeck() {
                 persons[i].geometry.position.x = prev_x + persons[i].signx*move_x;
                 persons[i].geometry.position.y = prev_y + persons[i].signy*move_y;
                 persons[i].geometry.position.z = prev_z;
-            
+                if (!deckBB.intersectsBox(persons[i].BB)) {
+                    persons[i].geometry.position.x = prev_x;
+                    persons[i].geometry.position.y = prev_y;
+                }
                 let walk_dist = Math.sqrt(Math.pow(move_x,2)+Math.pow(move_y,2)); 
                 persons[i].dist+=walk_dist;
                 document.getElementById("movment"+String(i+1)).innerText = persons[i].dist;   
