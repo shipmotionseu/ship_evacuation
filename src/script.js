@@ -72,12 +72,12 @@ function createDeck(deck_length,deck_width,deck_location_z) {
 function createCompartments() {
     let compartments = [];
     let compartmentsBB = [];
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < 4; i++) {
         const compartment = new THREE.Mesh(new THREE.BoxGeometry(10, 20, 2), new THREE.MeshBasicMaterial({
             color: 'yellow',
         }));
-        compartment.position.x = (i-1)*30;
-        compartment.position.y = (i-1)*12;
+        compartment.position.x = (i-1)*17;
+        compartment.position.y = (i-1)*3;
         compartment.position.z = 0;
         compartment.rotation.z = (i-1)*(Math.PI / 2);
         const compartmentBB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
