@@ -72,14 +72,17 @@ function createDeck(deck_length,deck_width,deck_location_z) {
 function createCompartments() {
     let compartments = [];
     let compartmentsBB = [];
-    for (let i = 0; i < 4; i++) {
+    let comp_x=[-30,-15,20]
+    let comp_y=[-5,5,5]
+    let compy_angle=[0,0,0]
+    for (let i = 0; i < 3; i++) {
         const compartment = new THREE.Mesh(new THREE.BoxGeometry(10, 20, 2), new THREE.MeshBasicMaterial({
             color: 'yellow',
         }));
-        compartment.position.x = (i-1)*17;
-        compartment.position.y = (i-1)*3;
+        compartment.position.x = comp_x[i];
+        compartment.position.y = comp_y[i];
         compartment.position.z = 0;
-        compartment.rotation.z = (i-1)*(Math.PI / 2);
+        compartment.rotation.z = compy_angle[i];
         const compartmentBB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
         compartmentBB.setFromObject(compartment);
 
@@ -377,7 +380,7 @@ function ShowDeck() {
     $("#saveResultJSON").prop("disabled", true);
     $("#startSim").prop("disabled", true);
     let init_vars_deck = createDeck(deck_length,deck_width,0);
-    let init_vars_compartments = createCompartments();
+    //let init_vars_compartments = createCompartments();
     let deck = init_vars_deck.deck;
     let init_vars_mustering = addMusteringStation(mes_x,mes_y,mes_width,mes_length,0);
     let mustering = init_vars_mustering.mustering;
