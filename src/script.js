@@ -22,7 +22,8 @@ class Human {
         this.BB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
         this.signx = 1;
         this.signy = 1;
-    }
+    };
+
 }
 
 function getRandomInt(max) {
@@ -201,8 +202,8 @@ function ShowDeck() {
   let mustering_inner = init_vars_mustering.mustering_inner;
   var  MusteringBB = init_vars_mustering.MusteringBB;
   persons=createPerson(no_persons).persons;
-  const dragControls = new DragControls([mustering], camera, renderer.domElement);
-  dragControls.addEventListener('drag', function(event) {
+  const MESdragControls = new DragControls([mustering], camera, renderer.domElement);
+  MESdragControls.addEventListener('drag', function(event) {
       console.log('drag');
 
       event.object.position.z = 0; 
@@ -210,7 +211,7 @@ function ShowDeck() {
       // This will prevent moving z axis, but will be on 0 line. change this to your object position of z axis.
   })
 
- dragControls.addEventListener('dragend', function(event) {
+ MESdragControls.addEventListener('dragend', function(event) {
     console.log('dragend');
     for (let i = 0; i < persons.length; i++) {
         scene.remove(persons[i].geometry);
