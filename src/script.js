@@ -222,10 +222,11 @@ function ShowDeck() {
 
     mustering_inner.position.x = mes_x;
     mustering_inner.position.y = mes_y;
+    mustering.position.x = mustering_inner.position.x
+    mustering.position.y = mustering_inner.position.y
     MusteringBB.setFromObject(mustering_inner);
-
-
 });
+
 
   function animate() {
     deltaT = clock.getDelta();
@@ -383,10 +384,10 @@ function ShowDeck() {
     let init_vars_deck = createDeck(deck_length,deck_width,0);
     //let init_vars_compartments = createCompartments();
     let deck = init_vars_deck.deck;
-    let init_vars_mustering = addMusteringStation(mes_x,mes_y,mes_width,mes_length,0);
-    let mustering = init_vars_mustering.mustering;
-    let mustering_inner = init_vars_mustering.mustering_inner;
-    var  MusteringBB = init_vars_mustering.MusteringBB;
+    //let init_vars_mustering = addMusteringStation(mes_x,mes_y,mes_width,mes_length,0);
+    //let mustering = init_vars_mustering.mustering;
+    //let mustering_inner = init_vars_mustering.mustering_inner;
+    //var  MusteringBB = init_vars_mustering.MusteringBB;
     
     console.log("start")
     //renderer.setAnimationLoop(animate);
