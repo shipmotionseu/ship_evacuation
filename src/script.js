@@ -228,6 +228,20 @@ function ShowDeck() {
 });
 
 
+const compDragControls = new DragControls(compartments, camera, renderer.domElement);
+
+compDragControls.addEventListener('drag', function(event) {
+    console.log('drag');
+
+    event.object.position.z = 0; 
+
+    // This will prevent moving z axis, but will be on 0 line. change this to your object position of z axis.
+})
+
+compDragControls.addEventListener('dragend', function(event) {
+
+});
+
   function animate() {
     deltaT = clock.getDelta();
     if (inMES.includes(0)) {
