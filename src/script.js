@@ -239,7 +239,13 @@ compDragControls.addEventListener('drag', function(event) {
 })
 
 compDragControls.addEventListener('dragend', function(event) {
-
+    for (let i = 0; i < persons.length; i++) {
+        scene.remove(persons[i].geometry);
+    }
+    persons=createPerson(no_persons).persons;
+    for (let c=0; c<compartments.length; c++) {
+        compartmentsBB[c].setFromObject(compartments[c])
+    }
 });
 
   function animate() {
