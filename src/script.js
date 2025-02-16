@@ -277,6 +277,8 @@ compDragControls.addEventListener('dragend', function(event) {
                 let prev_z = persons[i].geometry.position.z;
 
                 time_step+=deltaT;
+                
+                angle=angle*(1+(getRandomInt(20)-20)/100);
 
                 let move=deltaT * persons[i].speed;
                 let move_x=Math.sign(delta_mes_x)*move*Math.cos(angle);
