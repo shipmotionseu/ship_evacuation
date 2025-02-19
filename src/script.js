@@ -6,7 +6,9 @@ import {
     DragControls
 } from 'three/addons/controls/DragControls.js';
 
-
+let no_compartments=5;
+let compartments = [];
+let compartmentsBB = [];
 
 class Human {
     constructor(idname, speed, geometry, color) {
