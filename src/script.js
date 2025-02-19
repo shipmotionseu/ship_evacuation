@@ -319,7 +319,7 @@ compDragControls.addEventListener('dragend', function(event) {
                     person_outerBB.setFromObject(person_outer);      
                     if (!compartmentsBB[c].intersectsBox(person_outerBB)) {
                         persons[i].signx=0;
-                        persons[i].signy=test_dist;
+                        persons[i].signy=-test_dist;
                         move_y=move;
                     }
                     else{
@@ -339,11 +339,11 @@ compDragControls.addEventListener('dragend', function(event) {
                         }
                         if (person_outer.position.x<closestVertex.x) {
                             person_outer.position.x = prev_x + move;
-                            test_dist=1;
+                            test_dist=-1;
                         }
                         else {
                             person_outer.position.x = prev_x - move;
-                            test_dist=-1;
+                            test_dist=1;
                         }
     
                         let person_outerBB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
