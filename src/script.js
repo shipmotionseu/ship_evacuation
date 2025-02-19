@@ -70,11 +70,11 @@ function createDeck(deck_length,deck_width,deck_location_z) {
     };
 };
 
-function createCompartments(no_compratments) {
+function createCompartments(no_compartments) {
     let comp_x=[-30,-15,20,20, -5 ]
     let comp_y=[-5,6,-7, 11, -11]
     let compy_angle=[0,0,0,90, 90]
-    for (let i = 0; i < no_compratments; i++) {
+    for (let i = 0; i < no_compartments; i++) {
         const compartment = new THREE.Mesh(new THREE.BoxGeometry(10, 20, 2), new THREE.MeshBasicMaterial({
             color: 'yellow',
         }));
@@ -192,7 +192,7 @@ function ShowDeck() {
   let init_vars_deck = createDeck(deck_length,deck_width,0);
   let deck = init_vars_deck.deck;
   deckBB=init_vars_deck.deckBB;
-  let init_vars_compartments = createCompartments(no_compratments);
+  let init_vars_compartments = createCompartments(no_compartments);
   compartments = init_vars_compartments.compartments;
   compartmentsBB = init_vars_compartments.compartmentsBB;
   let init_vars_mustering = addMusteringStation(mes_x,mes_y,mes_width,mes_length,0);
@@ -336,7 +336,7 @@ compDragControls.addEventListener('dragend', function(event) {
     $("#saveResultJSON").prop("disabled", true);
     $("#startSim").prop("disabled", true);
     let init_vars_deck = createDeck(deck_length,deck_width,0);
-    //let init_vars_compartments = createCompartments(no_compratments);
+    //let init_vars_compartments = createCompartments(no_compartments);
     let deck = init_vars_deck.deck;
     //let init_vars_mustering = addMusteringStation(mes_x,mes_y,mes_width,mes_length,0);
     //let mustering = init_vars_mustering.mustering;
