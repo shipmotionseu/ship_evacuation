@@ -284,8 +284,8 @@ compDragControls.addEventListener('dragend', function(event) {
                 time_step+=deltaT;
 
                 let move=deltaT * persons[i].speed;
-                let move_x=Math.sign(delta_mes_x)*move*Math.cos(angle);
-                let move_y=Math.sign(delta_mes_x)*move*Math.sin(angle);
+                let move_x=move*Math.cos(angle);
+                let move_y=move*Math.sin(angle);
 
                 person_outer.position.x = prev_x + move_x;
                 person_outer.position.y = prev_y + move_y;
@@ -294,11 +294,16 @@ compDragControls.addEventListener('dragend', function(event) {
                 for (let c=0; c<compartments.length; c++) {
                 if (compartmentsBB[c].intersectsBox(person_outerBB)) {
                     signx=0
+                    move_x=0;
+                    if (Math.abs(persons[i].geometry.position.y)<0.001) {
+                        signy=Math.sign(signy)*signy;
+                        
+                    }
             }
         }
 
-                persons[i].geometry.position.x = prev_x + persons[i].signx*move_x;
-                persons[i].geometry.position.y = prev_y + persons[i].signy*move_y;
+                persons[i].geometry.position.x = prev_x + signx*move_x;
+                persons[i].geometry.position.y = prev_y + signy*move_y;
                 persons[i].geometry.position.z = prev_z;
                 if (!deckBB.intersectsBox(persons[i].BB)) {
                     persons[i].geometry.position.x = prev_x;
