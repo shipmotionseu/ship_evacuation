@@ -257,7 +257,10 @@ compDragControls.addEventListener('dragend', function(event) {
             if (inMES[i] == 0) {
                 persons[i].signx = 1;
                 persons[i].signy = 1;
+                let signx=1;
+                let signy=1;
                 let test_dist = 1;
+                
                 const person_outer=new THREE.Mesh(new THREE.BoxGeometry(1.5*0.4, 1.5*0.4, 1.8), new THREE.MeshBasicMaterial({
                     color: 'blue',
                     opacity: 1,
@@ -290,7 +293,7 @@ compDragControls.addEventListener('dragend', function(event) {
                 person_outerBB.setFromObject(person_outer);      
                 for (let c=0; c<compartments.length; c++) {
                 if (compartmentsBB[c].intersectsBox(person_outerBB)) {
-                 
+                    signx=0
             }
         }
 
