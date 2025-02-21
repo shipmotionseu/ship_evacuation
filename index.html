@@ -1,26 +1,26 @@
 <html lang="en">
 <head>
-  <meta charset="utf-8">  
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script type="importmap">
     {
-      "imports": {"three": "./three.js-master/build/three.module.js",
-        "three/addons/": "./three.js-master/examples/jsm/"
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.173.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.173.0/examples/jsm/"
       }
-
     }
   </script>
 <title>Ship Evacuation</title>
 </head>
-  
 
-    
+
+
 <body>
   <script src="https://code.jquery.com/jquery-3.7.0.js"></script>
   <script src="https://cdn.plot.ly/plotly-2.25.2.min.js" charset="utf-8"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
   <div id="main" style="width:95%;border:1px solid grey; padding:20px; font-family:Helvetica, sans-serif; margin: 0 auto;">
-<h1>Ship Corridor Creator</h1> 
+<h1>Ship Corridor Creator</h1>
 <div>
 <div align="right">
   <p style="width:90%" align="right"> <small>by Tomasz Hinz, Gdansk Tech and Henrique M. Gaspar, NTNU i Alesund<br>v0.1, Dec 2024.</small></p>
@@ -46,7 +46,7 @@
       divmovment.id="movment"+String(i+1)
       para.appendChild(divmovment);
       div.appendChild(para);
-  }   
+  }
   </script>
 <p><button id="startSim" type="button">START</button>
   <button id="plotFigure" type="button" disabled>Plot results!</button>
@@ -63,6 +63,6 @@
 <p><div id='envinformation' style="width:100%;border:1px solid rgb(255, 0, 255)">
 </div></p>
 </div>
-</body>    
-    
+</body>
+
 </html>
