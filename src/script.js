@@ -24,6 +24,7 @@ class Human {
         this.dist = 0;
         this.BB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
         this.movingUp = Math.random() < 0.5;
+        this.stuckCount = 0;
         this.avoidingObstacle = false;
     };
 
@@ -75,7 +76,7 @@ function createDeck(deck_length,deck_width,deck_location_z) {
 
 function createCompartments(no_compartments) {
     let comp_x=[-30,-15,20,20, -5 ]
-    let comp_y=[-5,6,-7, 11, -11]
+    let comp_y=[-5,6,-5, 9, -11]
     let compy_angle=[0,0,0,90, 90]
     const obstacleMeshes = [];
 
@@ -234,25 +235,25 @@ function ShowDeck() {
 });
 
 
-const compDragControls = new DragControls(compartmentsMeshes, camera, renderer.domElement);
+//const compDragControls = new DragControls(compartmentsMeshes, camera, renderer.domElement);
 
-compDragControls.addEventListener('drag', function(event) {
-    console.log('drag');
+//compDragControls.addEventListener('drag', function(event) {
+//    console.log('drag');
+//
+//    event.object.position.z = 0; 
+//
+//    // This will prevent moving z axis, but will be on 0 line. change this to your object position of z axis.
+//})
 
-    event.object.position.z = 0; 
-
-    // This will prevent moving z axis, but will be on 0 line. change this to your object position of z axis.
-})
-
-compDragControls.addEventListener('dragend', function(event) {
-    for (let i = 0; i < persons.length; i++) {
-        scene.remove(persons[i].geometry);
-    }
-    persons=createPerson(no_persons).persons;
-    for (let c=0; c<compartments.length; c++) {
-        compartmentsBB[c].setFromObject(compartmentsMeshes[c])
-    }
-});
+//compDragControls.addEventListener('dragend', function(event) {
+//    for (let i = 0; i < persons.length; i++) {
+//        scene.remove(persons[i].geometry);
+//    }
+//    persons=createPerson(no_persons).persons;
+//    for (let c=0; c<compartments.length; c++) {
+//        compartmentsBB[c].setFromObject(compartmentsMeshes[c])
+//    }
+//});
 
   function animate() {
     deltaT = clock.getDelta();
@@ -269,26 +270,33 @@ compDragControls.addEventListener('dragend', function(event) {
                 let move_x=Math.sign(delta_mes_x)*move*Math.cos(angle);
                 let move_y=Math.sign(delta_mes_x)*move*Math.sin(angle);
                 let newPos = persons[i].geometry.position.clone().add(new THREE.Vector3(move_x, move_y, 0));
-                let collision = compartments.some(compartments => compartments.intersectsBox(persons[i].BB));
+                let newBB = new THREE.Box3().setFromObject(persons[i].geometry).translate(new THREE.Vector3(move, 0, 0));
+                let collision = compartments.some(compartments => compartments.intersectsBox(newBB));
 
-                if (!collision) {
+                if (!collision && deckBB.containsPoint(newPos)) {
                     persons[i].geometry.position.copy(newPos);
                     persons[i].dist += move;
                     persons[i].avoidingObstacle = false;
+                    persons[i].stuckCount = 0;
                 } else {
                     if (!persons[i].avoidingObstacle) {
                         persons[i].movingUp = Math.random() < 0.5;
                         persons[i].avoidingObstacle = true;
                     }
-                    let verticalMove = persons[i].movingUp ? move_y : -move_y;
+                    let verticalMove = persons[i].movingUp ? move : -move;
                     let testPos = persons[i].geometry.position.clone().add(new THREE.Vector3(0, verticalMove, 0));
                     let testBB = new THREE.Box3().setFromObject(persons[i].geometry).translate(new THREE.Vector3(0, verticalMove, 0));
 
-                    if (!compartments.some(compartments => compartments.intersectsBox(testBB))) {
+                    if (!compartments.some(compartments => compartments.intersectsBox(testBB)) && deckBB.containsPoint(newPos)) {
                         persons[i].geometry.position.copy(testPos);
                         persons[i].dist += move;
+                        persons[i].stuckCount = 0;
                     } else {
+                        persons[i].stuckCount++;
+                        if (persons[i].stuckCount > 3) {
                         persons[i].movingUp = !persons[i].movingUp;
+                        persons[i].stuckCount = 0;
+                        }
                     }
                 };
 
