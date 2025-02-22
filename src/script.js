@@ -22,8 +22,8 @@ class Human {
         this.time = [];
         this.dist = 0;
         this.BB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
-        this.signx = 1;
-        this.signy = 1;
+        this.movingUp = Math.random() < 0.5;
+        this.avoidingObstacle = false;
     };
 
 }
@@ -255,63 +255,7 @@ compDragControls.addEventListener('dragend', function(event) {
     
         for (let i = 0; i < persons.length; i++) {
             if (inMES[i] == 0) {
-                persons[i].signx = 1;
-                persons[i].signy = 1;
-                let signx=1;
-                let signy=1;
-                let test_dist = 1;
-                
-                const person_outer=new THREE.Mesh(new THREE.BoxGeometry(1.5*0.4, 1.5*0.4, 1.8), new THREE.MeshBasicMaterial({
-                    color: 'blue',
-                    opacity: 1,
-                    transparent: true
-                }));
-                scene.add(person_outer);
 
-                person_outer.position.x=persons[i].geometry.position.x;
-                person_outer.position.y=persons[i].geometry.position.y;
-                person_outer.position.z=persons[i].geometry.position.z;
-    
-                let delta_mes_x=mustering_inner.position.x-persons[i].geometry.position.x;
-                let delta_mes_y=mustering_inner.position.y-persons[i].geometry.position.y;
-                let tgt=delta_mes_y/delta_mes_x;
-                let angle=Math.atan(tgt);
-    
-                let prev_x = persons[i].geometry.position.x;
-                let prev_y = persons[i].geometry.position.y;
-                let prev_z = persons[i].geometry.position.z;
-
-                time_step+=deltaT;
-
-                let move=deltaT * persons[i].speed;
-                let move_x=move*Math.cos(angle);
-                let move_y=move*Math.sin(angle);
-
-                person_outer.position.x = prev_x + move_x;
-                person_outer.position.y = prev_y + move_y;
-                let person_outerBB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
-                person_outerBB.setFromObject(person_outer);      
-                for (let c=0; c<compartments.length; c++) {
-
-        }
-
-                persons[i].geometry.position.x = prev_x + signx*move_x;
-                persons[i].geometry.position.y = prev_y + signy*move_y;
-                persons[i].geometry.position.z = prev_z;
-                if (!deckBB.intersectsBox(persons[i].BB)) {
-                    persons[i].geometry.position.x = prev_x;
-                    persons[i].geometry.position.y = prev_y;
-                }
-                let walk_dist = Math.sqrt(Math.pow(move_x,2)+Math.pow(move_y,2)); 
-                persons[i].dist+=walk_dist;
-                document.getElementById("movment"+String(i+1)).innerText = persons[i].dist;   
-
-                persons[i].x.push(persons[i].geometry.position.x+deck_length/2);
-                persons[i].y.push(persons[i].geometry.position.y);
-                persons[i].z.push(persons[i].geometry.position.z);
-                persons[i].time.push(time_step);
-                persons[i].BB.setFromObject(persons[i].geometry);
-                scene.remove(person_outer);
                 if (MusteringBB.intersectsBox(persons[i].BB)) {
                     inMES[i] = 1;
                 }
