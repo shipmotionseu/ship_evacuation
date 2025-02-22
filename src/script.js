@@ -292,14 +292,7 @@ compDragControls.addEventListener('dragend', function(event) {
                 let person_outerBB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
                 person_outerBB.setFromObject(person_outer);      
                 for (let c=0; c<compartments.length; c++) {
-                if (compartmentsBB[c].intersectsBox(person_outerBB)) {
-                    signx=0
-                    move_x=0;
-                    if (Math.abs(persons[i].geometry.position.y)<0.001) {
-                        signy=Math.sign(signy)*signy;
-                        
-                    }
-            }
+
         }
 
                 persons[i].geometry.position.x = prev_x + signx*move_x;
