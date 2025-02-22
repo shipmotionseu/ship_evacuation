@@ -9,6 +9,7 @@ import {
 let no_compartments=5;
 let compartments = [];
 let compartmentsBB = [];
+let compartmentsMeshes = [];
 
 class Human {
     constructor(idname, speed, geometry, color) {
@@ -76,6 +77,8 @@ function createCompartments(no_compartments) {
     let comp_x=[-30,-15,20,20, -5 ]
     let comp_y=[-5,6,-7, 11, -11]
     let compy_angle=[0,0,0,90, 90]
+    const obstacleMeshes = [];
+
     for (let i = 0; i < no_compartments; i++) {
         const compartment = new THREE.Mesh(new THREE.BoxGeometry(10, 20, 2), new THREE.MeshBasicMaterial({
             color: 'yellow',
@@ -89,11 +92,13 @@ function createCompartments(no_compartments) {
 
 
         scene.add(compartment);
-        compartments.push(compartment);
+        compartments.push(new THREE.Box3().setFromObject(compartment))
         compartmentsBB.push(compartmentBB);
+        obstacleMeshes.push(compartment);
     }
     return {
         compartments,
+        obstacleMeshes,
         compartmentsBB
     };
 }
@@ -196,6 +201,7 @@ function ShowDeck() {
   deckBB=init_vars_deck.deckBB;
   let init_vars_compartments = createCompartments(no_compartments);
   compartments = init_vars_compartments.compartments;
+  compartmentsMeshes = init_vars_compartments.obstacleMeshes;
   compartmentsBB = init_vars_compartments.compartmentsBB;
   let init_vars_mustering = addMusteringStation(mes_x,mes_y,mes_width,mes_length,0);
   let mustering = init_vars_mustering.mustering;
@@ -228,7 +234,7 @@ function ShowDeck() {
 });
 
 
-const compDragControls = new DragControls(compartments, camera, renderer.domElement);
+const compDragControls = new DragControls(compartmentsMeshes, camera, renderer.domElement);
 
 compDragControls.addEventListener('drag', function(event) {
     console.log('drag');
@@ -244,7 +250,7 @@ compDragControls.addEventListener('dragend', function(event) {
     }
     persons=createPerson(no_persons).persons;
     for (let c=0; c<compartments.length; c++) {
-        compartmentsBB[c].setFromObject(compartments[c])
+        compartmentsBB[c].setFromObject(compartmentsMeshes[c])
     }
 });
 
@@ -255,6 +261,45 @@ compDragControls.addEventListener('dragend', function(event) {
     
         for (let i = 0; i < persons.length; i++) {
             if (inMES[i] == 0) {
+                let delta_mes_x=mustering_inner.position.x-persons[i].geometry.position.x;
+                let delta_mes_y=mustering_inner.position.y-persons[i].geometry.position.y;
+                let tgt=delta_mes_y/delta_mes_x;
+                let angle=Math.atan(tgt);
+                let move=deltaT * persons[i].speed;
+                let move_x=Math.sign(delta_mes_x)*move*Math.cos(angle);
+                let move_y=Math.sign(delta_mes_x)*move*Math.sin(angle);
+                let newPos = persons[i].geometry.position.clone().add(new THREE.Vector3(move_x, move_y, 0));
+                let collision = compartments.some(compartments => compartments.intersectsBox(persons[i].BB));
+
+                if (!collision) {
+                    persons[i].geometry.position.copy(newPos);
+                    persons[i].dist += move;
+                    persons[i].avoidingObstacle = false;
+                } else {
+                    if (!persons[i].avoidingObstacle) {
+                        persons[i].movingUp = Math.random() < 0.5;
+                        persons[i].avoidingObstacle = true;
+                    }
+                    let verticalMove = persons[i].movingUp ? move_y : -move_y;
+                    let testPos = persons[i].geometry.position.clone().add(new THREE.Vector3(0, verticalMove, 0));
+                    let testBB = new THREE.Box3().setFromObject(persons[i].geometry).translate(new THREE.Vector3(0, verticalMove, 0));
+
+                    if (!compartments.some(compartments => compartments.intersectsBox(testBB))) {
+                        persons[i].geometry.position.copy(testPos);
+                        persons[i].dist += move;
+                    } else {
+                        persons[i].movingUp = !persons[i].movingUp;
+                    }
+                };
+
+
+                persons[i].x.push(persons[i].geometry.position.x+deck_length/2);
+                persons[i].y.push(persons[i].geometry.position.y);
+
+                persons[i].time.push(time_step);
+                persons[i].BB.setFromObject(persons[i].geometry);
+                time_step+=deltaT;
+                document.getElementById("movment"+String(i+1)).innerText = persons[i].dist.toFixed(2);   
 
                 if (MusteringBB.intersectsBox(persons[i].BB)) {
                     inMES[i] = 1;
