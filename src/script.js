@@ -235,25 +235,27 @@ function ShowDeck() {
 });
 
 
-//const compDragControls = new DragControls(compartmentsMeshes, camera, renderer.domElement);
+const compDragControls = new DragControls(compartmentsMeshes, camera, renderer.domElement);
 
-//compDragControls.addEventListener('drag', function(event) {
-//    console.log('drag');
-//
-//    event.object.position.z = 0; 
-//
-//    // This will prevent moving z axis, but will be on 0 line. change this to your object position of z axis.
-//})
+compDragControls.addEventListener('drag', function(event) {
+   console.log('drag');
 
-//compDragControls.addEventListener('dragend', function(event) {
-//    for (let i = 0; i < persons.length; i++) {
-//        scene.remove(persons[i].geometry);
-//    }
-//    persons=createPerson(no_persons).persons;
-//    for (let c=0; c<compartments.length; c++) {
-//        compartmentsBB[c].setFromObject(compartmentsMeshes[c])
-//    }
-//});
+   event.object.position.z = 0; 
+
+   // This will prevent moving z axis, but will be on 0 line. change this to your object position of z axis.
+})
+
+compDragControls.addEventListener('dragend', function(event) {
+   for (let i = 0; i < persons.length; i++) {
+       scene.remove(persons[i].geometry);
+   }
+   
+   persons=createPerson(no_persons).persons;
+   for (let c=0; c<compartments.length; c++) {
+       compartmentsBB[c].setFromObject(compartmentsMeshes[c])
+       compartments[c].setFromObject(compartmentsMeshes[c]);
+   }
+});
 
   function animate() {
     deltaT = clock.getDelta();
