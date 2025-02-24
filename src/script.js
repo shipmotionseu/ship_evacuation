@@ -242,6 +242,8 @@ function ShowDeck() {
     document.addEventListener('keydown', (event) => {
         if (event.key === 'Control') {
             controls.enabled = true;
+            compDragControls.enabled = false;
+
         }
       });
 
@@ -249,6 +251,8 @@ function ShowDeck() {
     document.addEventListener('keyup', (event) => {
         if (event.key === 'Control') {
             controls.enabled = false;
+            compDragControls.enabled = true;
+
         }
       });
 
