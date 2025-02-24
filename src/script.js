@@ -86,7 +86,7 @@ function createCompartments(no_compartments) {
         }));
         compartment.position.x = comp_x[i];
         compartment.position.y = comp_y[i];
-        compartment.position.z = 0;
+        compartment.position.z = 1;
         compartment.rotation.z = Math.PI*compy_angle[i]/180.0;
         const compartmentBB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
         compartmentBB.setFromObject(compartment);
