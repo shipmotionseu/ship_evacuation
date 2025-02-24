@@ -234,6 +234,24 @@ function ShowDeck() {
     MusteringBB.setFromObject(mustering_inner);
 });
 
+    // Create OrbitControls and disable by default.
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enabled = false;
+
+    // Enable OrbitControls when Control key is pressed.
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Control') {
+            controls.enabled = true;
+        }
+      });
+
+      // Disable OrbitControls when Control key is released.
+    document.addEventListener('keyup', (event) => {
+        if (event.key === 'Control') {
+            controls.enabled = false;
+        }
+      });
+
 
 const compDragControls = new DragControls(compartmentsMeshes, camera, renderer.domElement);
 
