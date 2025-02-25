@@ -143,7 +143,7 @@ function createPerson(no_persons) {
         do {
         persons[i].geometry.position.x =-40 + getRandomInt(5) - 2.5;
         persons[i].geometry.position.y = getRandomInt(deck_width) - (deck_width / 2);
-        persons[i].geometry.position.z = 0.9;
+        //persons[i].geometry.position.z = 0.9;
         persons[i].x[0] = persons[i].geometry.position.x+deck_length/2;
         persons[i].y[0] = persons[i].geometry.position.y;
         persons[i].z[0] = persons[i].geometry.position.z;
