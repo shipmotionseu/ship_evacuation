@@ -258,12 +258,12 @@ function createPersons(num) {
         '#7CFC00', '#7FFF00', '#90EE90', '#ADFF2F', '#98FB98'
     ];
     
-    let spawnLimits;
+    let PersonLocLimits;
     if (deck_configuration === "simple") {
         // For a "simple" configuration, spread persons over most of the deck.
         // Assuming the deck has already been created and deckBB is updated:
         const margin = 10; // adjust as needed to avoid spawning too close to edges
-        spawnLimits = {
+        PersonLocLimits = {
             minX: deckBB.min.x + margin,
             maxX: deckBB.max.x - margin,
             minY: deckBB.min.y + margin,
@@ -272,7 +272,7 @@ function createPersons(num) {
     } else if (deck_configuration === "test6") {
         // For test6, we want persons to appear only in a smaller area.
         // For example, a fixed 4x2 area (in local coordinates) in the bottom left corner.
-        spawnLimits = {
+        PersonLocLimits = {
             minX: -6,  // For a 12x12 deck centered at 0,0, deck spans x = -6 to +6.
             maxX: -2,  // 4 meters wide.
             minY: -6,  // y = -6 to -4 for a 2 meter high area.
@@ -286,7 +286,7 @@ function createPersons(num) {
         let candidate;
         let attempts = 0;
         do {
-            candidate = getRandomPositionOnLimitedArea(spawnLimits);
+            candidate = getRandomPositionOnLimitedArea(PersonLocLimits);
             attempts++;
             if (attempts > 1000) {
                 console.warn(`Could not find valid starting position for person ${i} after 1000 attempts`);
