@@ -38,6 +38,18 @@ function initializeConfiguration() {
         mes_width    = 2;
     }
 }
+function adjustCameraPosition() {
+    // Update deck bounding box based on the current deck geometry
+    deckBB = new THREE.Box3().setFromObject(deck);
+    const deckSize = new THREE.Vector3();
+    deckBB.getSize(deckSize);
+    const maxDeckSize = Math.max(deckSize.x, deckSize.y);
+    // Compute the ideal distance so the deck exactly fills the view:
+    const requiredZ = (maxDeckSize / 2) / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+    // Increase the distance so the deck occupies only about 60% of the view:
+    camera.position.z = requiredZ / 0.6;
+    camera.updateProjectionMatrix();
+}
 
 function createScene() {
     scene = new THREE.Scene();
@@ -245,30 +257,43 @@ function createPersons(num) {
         '#00FF7F', '#00FA9A', '#8FBC8F', '#66CDAA', '#9ACD32', 
         '#7CFC00', '#7FFF00', '#90EE90', '#ADFF2F', '#98FB98'
     ];
-    const PersonLocationLimits = {
-        minX: -6,
-        maxX: -2,
-        minY: -6,
-        maxY: -4
-    };
-
+    
+    let spawnLimits;
+    if (deck_configuration === "simple") {
+        // For a "simple" configuration, spread persons over most of the deck.
+        // Assuming the deck has already been created and deckBB is updated:
+        const margin = 10; // adjust as needed to avoid spawning too close to edges
+        spawnLimits = {
+            minX: deckBB.min.x + margin,
+            maxX: deckBB.max.x - margin,
+            minY: deckBB.min.y + margin,
+            maxY: deckBB.max.y - margin
+        };
+    } else if (deck_configuration === "test6") {
+        // For test6, we want persons to appear only in a smaller area.
+        // For example, a fixed 4x2 area (in local coordinates) in the bottom left corner.
+        spawnLimits = {
+            minX: -6,  // For a 12x12 deck centered at 0,0, deck spans x = -6 to +6.
+            maxX: -2,  // 4 meters wide.
+            minY: -6,  // y = -6 to -4 for a 2 meter high area.
+            maxY: -4
+        };
+    }
+    
     inMES = Array(num).fill(0);
     persons = Array.from({ length: num }, (_, i) => {
         let human = new Human(i, 3 + Math.random() * 2, person_colors[i % person_colors.length]);
         let candidate;
         let attempts = 0;
-        // Keep generating candidate positions until the candidate is on the deck
-        // and not inside any compartment or the mustering station.
         do {
-            //candidate = getRandomPositionOnDeck();
-            candidate = getRandomPositionOnLimitedArea(PersonLocationLimits)
+            candidate = getRandomPositionOnLimitedArea(spawnLimits);
             attempts++;
             if (attempts > 1000) {
                 console.warn(`Could not find valid starting position for person ${i} after 1000 attempts`);
                 break;
             }
         } while (
-            isPositionInsideAnyCompartment(candidate) || 
+            isPositionInsideAnyCompartment(candidate) ||
             isPositionInMusteringStation(candidate)
         );
         human.geometry.position.copy(candidate);
@@ -342,6 +367,9 @@ function animate() {
     }
 }
 function resetScene() {
+        // Hide the graph container when restarting the scene
+        document.getElementById("movment2D").style.display = "none";
+    
     cancelAnimationFrame(animationId);
     disposeMeshes([
         ...compartmentsMeshes,
@@ -357,7 +385,12 @@ function resetScene() {
     addMusteringStation();
     createPersons(no_persons);
     setupDragControls();
-    renderer.render(scene, camera); // Render static scene until simulation starts
+
+    // Delay the camera adjustment to allow the deck to be fully added.
+    requestAnimationFrame(() => {
+        adjustCameraPosition();
+        renderer.render(scene, camera);
+    });
 }
 
 function init() {
@@ -374,6 +407,7 @@ function init() {
     const startButton = document.getElementById("startSim");
     if (startButton) {
         startButton.addEventListener("click", () => {
+            document.getElementById("movment2D").style.display = "none";
             startButton.disabled = true;
             clock.start();
             animate();
@@ -415,20 +449,23 @@ $("#no_persons").on("change", function() {
   });
 
   $("#plotFigure").on("click", function() {
-    for (let i = 0; i < no_persons; i++) {
-        let TESTER = document.getElementById('movment2D');
-        var data = []
-        for (let i = 0; i < no_persons; i++) {
-            data.push({
-                x: persons[i].x,
-                y: persons[i].y,
-                mode: 'lines',
-                name: 'person ' + String(i + 1)
-            })
-        }
+    // Make sure the graph container is visible.
+    document.getElementById("movment2D").style.display = "block";
 
-        Plotly.newPlot(TESTER, data);
+    // Prepare the data for all persons.
+    let TESTER = document.getElementById('movment2D');
+    var data = [];
+    for (let i = 0; i < no_persons; i++) {
+        data.push({
+            x: persons[i].x,
+            y: persons[i].y,
+            mode: 'lines',
+            name: 'person ' + String(i + 1)
+        });
     }
+
+    // Create the plot.
+    Plotly.newPlot(TESTER, data);
 });
 
 
