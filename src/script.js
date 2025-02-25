@@ -10,7 +10,7 @@ let no_compartments=5;
 let compartments = [];
 let compartmentsBB = [];
 let compartmentsMeshes = [];
-
+let animationId;
 class Human {
     constructor(idname, speed, geometry, color) {
         this.idname = idname;
@@ -75,12 +75,14 @@ function createDeck(deck_length,deck_width,deck_location_z) {
 };
 
 function createCompartments(no_compartments) {
+    const obstacleMeshes = [];
+    if (deck_configuration=="simple") {
     let comp_x=[-30,-15,20,20, -5 ]
     let comp_y=[-5,6,-5, 9, -11]
     let compy_angle=[0,0,0,90, 90]
-    const obstacleMeshes = [];
 
-    for (let i = 0; i < no_compartments; i++) {
+
+    for (let i = 0; i < comp_x.length; i++) {
         const compartment = new THREE.Mesh(new THREE.BoxGeometry(10, 20, 2), new THREE.MeshBasicMaterial({
             color: 'yellow',
         }));
@@ -97,6 +99,34 @@ function createCompartments(no_compartments) {
         compartmentsBB.push(compartmentBB);
         obstacleMeshes.push(compartment);
     }
+}
+else {
+    let comp_x=[-30,-15,20,20, -5 ]
+    let comp_y=[-5,6,-5, 9, -11]
+    let compy_angle=[90,90,90,0, 0]
+    let comp_length=[10,10,10,10,10]
+    let comp_width=[20,20,20,20,20]
+    let comp_height=[2,2,2,2,2]
+
+
+    for (let i = 0; i < comp_x.length; i++) {
+        const compartment = new THREE.Mesh(new THREE.BoxGeometry(comp_length[i], comp_width[i], comp_height[i]), new THREE.MeshBasicMaterial({
+            color: 'yellow',
+        }));
+        compartment.position.x = comp_x[i];
+        compartment.position.y = comp_y[i];
+        compartment.position.z = 1;
+        compartment.rotation.z = Math.PI*compy_angle[i]/180.0;
+        const compartmentBB = new THREE.Box3(new THREE.Vector3(), new THREE.Vector3());
+        compartmentBB.setFromObject(compartment);
+
+
+        scene.add(compartment);
+        compartments.push(new THREE.Box3().setFromObject(compartment))
+        compartmentsBB.push(compartmentBB);
+        obstacleMeshes.push(compartment);
+}
+}
     return {
         compartments,
         obstacleMeshes,
@@ -283,7 +313,7 @@ compDragControls.addEventListener('dragend', function(event) {
   function animate() {
     deltaT = clock.getDelta();
     if (inMES.includes(0)) {
-        requestAnimationFrame(animate);
+        animationId = requestAnimationFrame(animate);
     
         for (let i = 0; i < persons.length; i++) {
             if (inMES[i] == 0) {
@@ -432,3 +462,39 @@ $("#saveResultCSV").on("click", function() {
 $("#saveResultJSON").on("click", function() {
 
 });
+// Function to handle radio button changes
+function handleRadioChange(event) {
+    const selectedValue = event.target.value;
+    console.log(`You selected: ${selectedValue}`);
+    deck_configuration=selectedValue;
+    $("#plotFigure").prop("disabled", true);
+    $("#saveResultCSV").prop("disabled", true);
+    $("#saveResultJSON").prop("disabled", true);
+    $("#startSim").prop("disabled", false);
+    cancelAnimationFrame(animationId);
+    renderer.setAnimationLoop(null);
+    for (let i = 0; i < persons.length; i++) {
+        scene.remove(persons[i].geometry);
+    }
+      persons=createPerson(no_persons).persons;
+
+      for (let i = 0; i < compartmentsMeshes.length; i++) {
+        scene.remove(compartmentsMeshes[i]);
+    }
+    compartments=[]
+    compartmentsBB=[]
+    compartmentsMeshes=[]
+      ShowDeck();
+      let init_vars_compartments = createCompartments(no_compartments);
+      compartments = init_vars_compartments.compartments;
+      compartmentsMeshes = init_vars_compartments.obstacleMeshes;
+      compartmentsBB = init_vars_compartments.compartmentsBB;
+  }
+  
+  // Select all radio buttons with the name "options"
+  const radioButtons = document.querySelectorAll('input[name="options"]');
+  
+  // Attach the event listener to each radio button
+  radioButtons.forEach(radio => {
+    radio.addEventListener('change', handleRadioChange);
+  });

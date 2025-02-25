@@ -31,6 +31,7 @@
 <p>Number of persons in simulation: <input title="nopersons" type="number" id="no_persons" value="2" min="1" max="50" onclick=""> </input></p>
 
 <script>let no_persons = document.getElementById("no_persons").value;
+let deck_configuration= "simple";
   let no_compartments=5;
   let compartments = [];
   let compartmentsBB = [];
@@ -58,6 +59,14 @@
       document.getElementById("saveResultJSON").disabled = true;
       document.getElementById("startSim").disabled = false;
   </script>
+
+<div class="radio-container">
+  <input type="radio" id="radio1" name="options" value="simple">
+  <label for="radio1">Simple deck</label>
+  <input type="radio" id="radio2" name="options" value="test6">
+  <label for="radio2">L-shape deck - MSC.1/Circ.1533 Test 6: Rounding corners</label>
+</div>
+
 <p><div id='movment2D' style="width:100%;border:1px solid rgb(0, 255, 0)"><!--Plotly will be drawn inside this DIV --></div></p>
 <p><div id='movment3D' style="width:100%;border:1px solid rgb(255, 0, 0)"><!--Three.js will be drawn inside this DIV --></div></p>
 <p><div id='envinformation' style="width:100%;border:1px solid rgb(255, 0, 255)">
