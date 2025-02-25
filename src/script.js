@@ -16,6 +16,7 @@ let time_step = 0;
 
 function initializeConfiguration() {
     if (deck_configuration === "simple") {
+        no_compartments = 5;
         mes_x_global = 105;
         mes_y_global = 17;
         mes_width = 10;
@@ -23,12 +24,18 @@ function initializeConfiguration() {
         deck_length = 105.2;
         deck_width = 34;
     } else {
+        no_compartments = 1;
+        // Deck is 12 × 12
+        deck_length = 12;
+        deck_width  = 12;
+
+        // Mustering station is 2 × 2, placed near top-right corner
+        // (Because deck is centered at (0,0), we set mes_x_global, mes_y_global 
+        //  to about deck_length - 1 so that final position is near x=4, y=4.)
         mes_x_global = 11;
-        mes_y_global = 0;
-        mes_width = 2;
-        mes_length = 2;
-        deck_length = 13;
-        deck_width = 14;
+        mes_y_global = 11;
+        mes_length   = 2;
+        mes_width    = 2;
     }
 }
 
@@ -81,12 +88,12 @@ function getCompartmentConfiguration(config) {
               comp_height: [2, 2, 2, 2, 2],
           }
         : {
-              comp_x: [-25, -10, 15, 20, -2],
-              comp_y: [-6, 8, -3, 11, -9],
-              compy_angle: [0, 0, 0, 90, 90],
-              comp_length: [12, 14, 10, 8, 10],
-              comp_width: [18, 20, 22, 20, 18],
-              comp_height: [2, 2, 2, 2, 2],
+            comp_x:      [ -1 ],   // center x
+            comp_y:      [ 1 ],    // center y
+            compy_angle: [ 0 ],
+            comp_length: [ 10 ],   // width along x
+            comp_width:  [ 10 ],   // height along y
+            comp_height: [ 2 ]     // or however tall you want the compartment
           };
 }
 
@@ -112,13 +119,13 @@ function createCompartments() {
 
 function addMusteringStation() {
     mustering = new THREE.Mesh(
-        new THREE.BoxGeometry(mes_width, mes_length, 2.5),
+        new THREE.BoxGeometry(mes_length, mes_width, 2.5),
         new THREE.MeshBasicMaterial({ color: 'red', opacity: 0.5, transparent: true })
     );
     mustering.position.set(mes_x_global - deck_length / 2, mes_y_global - deck_width / 2, 0);
 
     mustering_inner = new THREE.Mesh(
-        new THREE.BoxGeometry(mes_width - 1, mes_length - 1, 2.5),
+        new THREE.BoxGeometry(mes_length - 1, mes_width - 1, 2.5),
         new THREE.MeshBasicMaterial({ color: 'red', opacity: 0.5, transparent: true })
     );
     mustering_inner.position.copy(mustering.position);
@@ -127,19 +134,58 @@ function addMusteringStation() {
     scene.add(mustering);
 }
 
+function disposePersons() {
+    if (persons && persons.length > 0) {
+        persons.forEach(person => {
+            if (person.geometry) {
+                scene.remove(person.geometry);
+                // Dispose geometry and material if needed:
+                if (person.geometry.geometry) {
+                    person.geometry.geometry.dispose();
+                }
+                if (person.geometry.material) {
+                    if (Array.isArray(person.geometry.material)) {
+                        person.geometry.material.forEach(mat => mat.dispose());
+                    } else {
+                        person.geometry.material.dispose();
+                    }
+                }
+            }
+        });
+        persons = [];
+    }
+}
+
 function setupDragControls() {
     if (compDragControls) compDragControls.dispose();
     if (MESdragControls) MESdragControls.dispose();
 
     compDragControls = new DragControls(compartmentsMeshes, camera, renderer.domElement);
     compDragControls.addEventListener('dragend', () => {
-        compartmentsMeshes.forEach((mesh, i) => compartmentsBB[i].setFromObject(mesh));
+        compartmentsMeshes.forEach((mesh, i) => {
+            compartmentsBB[i].setFromObject(mesh);
+        });
+        // Abort the simulation
+        cancelAnimationFrame(animationId);
+        // Remove the old persons from the scene
+        disposePersons();
+        // Create new persons based on the updated layout
+        createPersons(no_persons);
+        renderer.render(scene, camera);
+        // Re-enable the START button to allow restarting the simulation
+        document.getElementById("startSim").disabled = false;
     });
 
     MESdragControls = new DragControls([mustering], camera, renderer.domElement);
     MESdragControls.addEventListener('dragend', (event) => {
         mustering_inner.position.copy(event.object.position);
         MusteringBB.setFromObject(mustering_inner);
+        cancelAnimationFrame(animationId);
+        disposePersons();
+        createPersons(no_persons);
+        renderer.render(scene, camera);
+        // Re-enable the START button here too
+        document.getElementById("startSim").disabled = false;
     });
 }
 
@@ -162,22 +208,74 @@ class Human {
     }
 }
 
+// Generate a random position within the deck's bounding box (deckBB)
+function getRandomPositionOnDeck() {
+    const x = Math.random() * (deckBB.max.x - deckBB.min.x) + deckBB.min.x;
+    const y = Math.random() * (deckBB.max.y - deckBB.min.y) + deckBB.min.y;
+    return new THREE.Vector3(x, y, 0);
+}
+
+function getRandomPositionOnLimitedArea(limits) {
+    const { minX, maxX, minY, maxY } = limits;
+    const x = Math.random() * (maxX - minX) + minX;
+    const y = Math.random() * (maxY - minY) + minY;
+    return new THREE.Vector3(x, y, 0);
+}
+
+// Check if a given position is inside any compartment, using an expanded bounding box
+function isPositionInsideAnyCompartment(position) {
+    return compartmentsBB.some(bb => {
+        const expandedBB = bb.clone().expandByScalar(1);
+        return expandedBB.containsPoint(position);
+    });
+}
+
+// Check if a position is inside the mustering station, using an expanded bounding box
+function isPositionInMusteringStation(position) {
+    if (!MusteringBB) return false;
+    const expandedBB = MusteringBB.clone().expandByScalar(1);
+    return expandedBB.containsPoint(position);
+}
 
 function createPersons(num) {
-    const person_colors = ['#006400', '#008000', '#556B2F', '#228B22', '#2E8B57', '#808000', '#6B8E23', '#3CB371', '#32CD32', '#00FF00', '#00FF7F', '#00FA9A', '#8FBC8F', '#66CDAA', '#9ACD32', '#7CFC00', '#7FFF00', '#90EE90', '#ADFF2F', '#98FB98']
+    num = Number(num);  // Ensure num is a number.
+    const person_colors = [
+        '#006400', '#008000', '#556B2F', '#228B22', '#2E8B57',
+        '#808000', '#6B8E23', '#3CB371', '#32CD32', '#00FF00', 
+        '#00FF7F', '#00FA9A', '#8FBC8F', '#66CDAA', '#9ACD32', 
+        '#7CFC00', '#7FFF00', '#90EE90', '#ADFF2F', '#98FB98'
+    ];
+    const PersonLocationLimits = {
+        minX: -6,
+        maxX: -2,
+        minY: -6,
+        maxY: -4
+    };
 
     inMES = Array(num).fill(0);
     persons = Array.from({ length: num }, (_, i) => {
         let human = new Human(i, 3 + Math.random() * 2, person_colors[i % person_colors.length]);
-        // Assign a random starting position within the deck boundaries:
-        human.geometry.position.set(
-            -deck_length/2 + Math.random() * deck_length,
-            -deck_width/2 + Math.random() * deck_width,
-            0
+        let candidate;
+        let attempts = 0;
+        // Keep generating candidate positions until the candidate is on the deck
+        // and not inside any compartment or the mustering station.
+        do {
+            //candidate = getRandomPositionOnDeck();
+            candidate = getRandomPositionOnLimitedArea(PersonLocationLimits)
+            attempts++;
+            if (attempts > 1000) {
+                console.warn(`Could not find valid starting position for person ${i} after 1000 attempts`);
+                break;
+            }
+        } while (
+            isPositionInsideAnyCompartment(candidate) || 
+            isPositionInMusteringStation(candidate)
         );
+        human.geometry.position.copy(candidate);
         return human;
     });
 }
+
 function animate() {
     deltaT = clock.getDelta();
     time_step += deltaT;  // update once per frame
@@ -263,6 +361,7 @@ function resetScene() {
 }
 
 function init() {
+    deck_configuration = document.querySelector('input[name="options"]:checked').value;
     initializeConfiguration();
     createScene();
     createDeck();
@@ -270,7 +369,7 @@ function init() {
     addMusteringStation();
     createPersons(no_persons);
     setupDragControls();
-    renderer.render(scene, camera); // Display static scene initially
+    renderer.render(scene, camera);
 
     const startButton = document.getElementById("startSim");
     if (startButton) {
@@ -286,8 +385,14 @@ document.querySelectorAll('input[name="options"]').forEach((radio) => {
     radio.addEventListener('change', (event) => {
         deck_configuration = event.target.value;
         resetScene();
+        document.getElementById("startSim").disabled = false;
+        document.getElementById("plotFigure").disabled = true;
+        document.getElementById("saveResultCSV").disabled = true;
+        document.getElementById("saveResultJSON").disabled
     });
 });
+
+
 
 init();
 
