@@ -6,7 +6,7 @@ let no_compartments = 5;
 let compartments = [], compartmentsBB = [], compartmentsMeshes = [];
 let animationId, scene, camera, renderer, deck, deckBB, mustering, mustering_inner, MusteringBB;
 let persons = [], inMES = [];
-let compDragControls, MESdragControls;
+let orbitControls, compDragControls, MESdragControls;
 
 let deck_configuration = "simple";
 let mes_x_global, mes_y_global, mes_width, mes_length, deck_length, deck_width;
@@ -168,37 +168,75 @@ function disposePersons() {
     }
 }
 
+// Set up OrbitControls for scene rotation.
+function setupOrbitControls() {
+  orbitControls = new OrbitControls(camera, renderer.domElement);
+  orbitControls.enableDamping = true;
+  orbitControls.dampingFactor = 0.1;
+  orbitControls.target.set(0, 0, 0);
+  // Default mode: rotation enabled.
+  orbitControls.enabled = true;
+  return orbitControls;
+}
+
+// Set up DragControls for moving compartments and the mustering station.
 function setupDragControls() {
-    if (compDragControls) compDragControls.dispose();
-    if (MESdragControls) MESdragControls.dispose();
+  // Dispose existing drag controls if any.
+  if (compDragControls) compDragControls.dispose();
+  if (MESdragControls) MESdragControls.dispose();
 
-    compDragControls = new DragControls(compartmentsMeshes, camera, renderer.domElement);
-    compDragControls.addEventListener('dragend', () => {
-        compartmentsMeshes.forEach((mesh, i) => {
-            compartmentsBB[i].setFromObject(mesh);
-        });
-        // Abort the simulation
-        cancelAnimationFrame(animationId);
-        // Remove the old persons from the scene
-        disposePersons();
-        // Create new persons based on the updated layout
-        createPersons(no_persons);
-        renderer.render(scene, camera);
-        // Re-enable the START button to allow restarting the simulation
-        document.getElementById("startSim").disabled = false;
-    });
+  compDragControls = new DragControls(compartmentsMeshes, camera, renderer.domElement);
+  MESdragControls = new DragControls([mustering], camera, renderer.domElement);
 
-    MESdragControls = new DragControls([mustering], camera, renderer.domElement);
-    MESdragControls.addEventListener('dragend', (event) => {
-        mustering_inner.position.copy(event.object.position);
-        MusteringBB.setFromObject(mustering_inner);
-        cancelAnimationFrame(animationId);
-        disposePersons();
-        createPersons(no_persons);
-        renderer.render(scene, camera);
-        // Re-enable the START button here too
-        document.getElementById("startSim").disabled = false;
-    });
+  // In default mode, we want drag controls off.
+  compDragControls.enabled = false;
+  MESdragControls.enabled = false;
+
+  // Existing dragend events (unchanged):
+  compDragControls.addEventListener('dragend', () => {
+      compartmentsMeshes.forEach((mesh, i) => {
+          compartmentsBB[i].setFromObject(mesh);
+      });
+      cancelAnimationFrame(animationId);
+      disposePersons();
+      createPersons(no_persons);
+      renderer.render(scene, camera);
+      document.getElementById("startSim").disabled = false;
+  });
+  MESdragControls.addEventListener('dragend', (event) => {
+      mustering_inner.position.copy(event.object.position);
+      MusteringBB.setFromObject(mustering_inner);
+      cancelAnimationFrame(animationId);
+      disposePersons();
+      createPersons(no_persons);
+      renderer.render(scene, camera);
+      document.getElementById("startSim").disabled = false;
+  });
+}
+
+// Global event listeners to toggle controls based on the Control key.
+function setupControlKeyListeners() {
+  document.addEventListener('keydown', (event) => {
+    // When Control is pressed:
+    if (event.key === 'Control'|| event.key === 'Meta') {
+      // Disable orbit controls so that dragging doesn't rotate the scene.
+      if (orbitControls) orbitControls.enabled = false;
+      // Enable drag controls to allow object movement.
+      if (compDragControls) compDragControls.enabled = true;
+      if (MESdragControls) MESdragControls.enabled = true;
+    }
+  });
+
+  document.addEventListener('keyup', (event) => {
+    // When Control is released:
+    if (event.key === 'Control'|| event.key === 'Meta') {
+      // Re-enable orbit controls for scene rotation.
+      if (orbitControls) orbitControls.enabled = true;
+      // Disable drag controls so they don't interfere with rotation.
+      if (compDragControls) compDragControls.enabled = false;
+      if (MESdragControls) MESdragControls.enabled = false;
+    }
+  });
 }
 
 class Human {
@@ -305,6 +343,10 @@ function animate() {
     deltaT = clock.getDelta();
     time_step += deltaT;  // update once per frame
 
+    if (orbitControls && orbitControls.enabled) {
+        orbitControls.update();
+    }
+    
     if (inMES.includes(0)) {
         animationId = requestAnimationFrame(animate);
         persons.forEach((person, i) => {
@@ -401,7 +443,17 @@ function init() {
     createCompartments();
     addMusteringStation();
     createPersons(no_persons);
+    
+    // Set up DragControls (they start disabled).
     setupDragControls();
+    
+    // Set up OrbitControls (enabled by default).
+    setupOrbitControls();
+    
+    // Set up the key listeners to toggle between controls.
+    setupControlKeyListeners();
+    
+    adjustCameraPosition();
     renderer.render(scene, camera);
 
     const startButton = document.getElementById("startSim");
@@ -415,6 +467,7 @@ function init() {
     }
 }
 
+init();
 document.querySelectorAll('input[name="options"]').forEach((radio) => {
     radio.addEventListener('change', (event) => {
         deck_configuration = event.target.value;
