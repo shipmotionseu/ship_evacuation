@@ -181,37 +181,39 @@ function setupOrbitControls() {
 
 // Set up DragControls for moving compartments and the mustering station.
 function setupDragControls() {
-  // Dispose existing drag controls if any.
-  if (compDragControls) compDragControls.dispose();
-  if (MESdragControls) MESdragControls.dispose();
+    if (compDragControls) compDragControls.dispose();
+    if (MESdragControls) MESdragControls.dispose();
 
-  compDragControls = new DragControls(compartmentsMeshes, camera, renderer.domElement);
-  MESdragControls = new DragControls([mustering], camera, renderer.domElement);
+    compDragControls = new DragControls(compartmentsMeshes, camera, renderer.domElement);
+    // While dragging, force compartments to remain at z = 1.
+    compDragControls.addEventListener('drag', (event) => {
+        event.object.position.z = 1;
+    });
+    compDragControls.addEventListener('dragend', () => {
+        compartmentsMeshes.forEach((mesh, i) => {
+            compartmentsBB[i].setFromObject(mesh);
+        });
+        cancelAnimationFrame(animationId);
+        disposePersons();
+        createPersons(no_persons);
+        renderer.render(scene, camera);
+        document.getElementById("startSim").disabled = false;
+    });
 
-  // In default mode, we want drag controls off.
-  compDragControls.enabled = false;
-  MESdragControls.enabled = false;
-
-  // Existing dragend events (unchanged):
-  compDragControls.addEventListener('dragend', () => {
-      compartmentsMeshes.forEach((mesh, i) => {
-          compartmentsBB[i].setFromObject(mesh);
-      });
-      cancelAnimationFrame(animationId);
-      disposePersons();
-      createPersons(no_persons);
-      renderer.render(scene, camera);
-      document.getElementById("startSim").disabled = false;
-  });
-  MESdragControls.addEventListener('dragend', (event) => {
-      mustering_inner.position.copy(event.object.position);
-      MusteringBB.setFromObject(mustering_inner);
-      cancelAnimationFrame(animationId);
-      disposePersons();
-      createPersons(no_persons);
-      renderer.render(scene, camera);
-      document.getElementById("startSim").disabled = false;
-  });
+    MESdragControls = new DragControls([mustering], camera, renderer.domElement);
+    // While dragging, force the mustering station to remain at z = 0.
+    MESdragControls.addEventListener('drag', (event) => {
+        event.object.position.z = 0;
+    });
+    MESdragControls.addEventListener('dragend', (event) => {
+        mustering_inner.position.copy(event.object.position);
+        MusteringBB.setFromObject(mustering_inner);
+        cancelAnimationFrame(animationId);
+        disposePersons();
+        createPersons(no_persons);
+        renderer.render(scene, camera);
+        document.getElementById("startSim").disabled = false;
+    });
 }
 
 // Global event listeners to toggle controls based on the Control key.
