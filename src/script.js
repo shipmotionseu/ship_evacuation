@@ -302,7 +302,7 @@ function createPersons(num) {
     if (deck_configuration === "simple") {
         // For a "simple" configuration, spread persons over most of the deck.
         // Assuming the deck has already been created and deckBB is updated:
-        const margin = 10; // adjust as needed to avoid spawning too close to edges
+        const margin = 2; // adjust as needed to avoid spawning too close to edges
         PersonLocLimits = {
             minX: deckBB.min.x + margin,
             maxX: deckBB.max.x - margin,
