@@ -14,30 +14,55 @@ let deltaT = 0;
 const clock = new THREE.Clock();
 let time_step = 0;
 
-function initializeConfiguration() {
-    if (deck_configuration === "simple") {
-        no_compartments = 5;
-        mes_x_global = 105;
-        mes_y_global = 17;
-        mes_width = 10;
-        mes_length = 5;
-        deck_length = 105.2;
-        deck_width = 34;
-    } else {
-        no_compartments = 1;
-        // Deck is 12 × 12
-        deck_length = 12;
-        deck_width  = 12;
+let jsonConfig = null;
 
-        // Mustering station is 2 × 2, placed near top-right corner
-        // (Because deck is centered at (0,0), we set mes_x_global, mes_y_global 
-        //  to about deck_length - 1 so that final position is near x=4, y=4.)
-        mes_x_global = 11;
-        mes_y_global = 11;
-        mes_length   = 2;
-        mes_width    = 2;
+function loadGeometryFile(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      jsonConfig = JSON.parse(e.target.result);
+      deck_configuration = 'json';
+      // re‐draw with new data
+      resetScene();
+      document.getElementById('radio3').checked = true;
+    };
+    reader.readAsText(file);
+  }
+
+  function initializeConfiguration() {
+    if (deck_configuration === "simple") {
+      no_compartments = 5;
+      mes_x_global  = 105;  
+      mes_y_global  = 17;
+      mes_length    = 5;
+      mes_width     = 10;
+      deck_length   = 105.2;
+      deck_width    = 34;
     }
-}
+    else if (deck_configuration === "test6") {
+      no_compartments = 1;
+      deck_length = 12; deck_width = 12;
+      mes_x_global = 11; mes_y_global = 11;
+      mes_length = 2; mes_width = 2;
+    }
+    else if (deck_configuration === "json" && jsonConfig) {
+      const ms = jsonConfig.arrangements.compartments.MusteringStation.attributes;
+      no_compartments = Object.keys(jsonConfig.arrangements.compartments)
+                              .filter(k => k!=='MusteringStation').length;
+      mes_length  = +ms.length;
+      mes_width   = +ms.width;
+      // JSON x,y are deck-centered already
+      mes_x_global= +ms.x;
+      mes_y_global= +ms.y;
+      // If you want deck dimensions from JSON (optional):
+      if (ms.max_x && ms.max_y) {
+        deck_length = +ms.max_x;
+        deck_width  = +ms.max_y;
+      }
+    }
+  }
+
 function adjustCameraPosition() {
     // Update deck bounding box based on the current deck geometry
     deckBB = new THREE.Box3().setFromObject(deck);
@@ -90,23 +115,41 @@ function createDeck() {
 }
 
 function getCompartmentConfiguration(config) {
-    return config === "simple"
-        ? {
-              comp_x: [-30, -15, 20, 20, -5],
-              comp_y: [-5, 6, -5, 9, -11],
-              compy_angle: [0, 0, 0, 90, 90],
-              comp_length: [10, 10, 10, 10, 10],
-              comp_width: [20, 20, 20, 20, 20],
-              comp_height: [2, 2, 2, 2, 2],
-          }
-        : {
-            comp_x:      [ -1 ],   // center x
-            comp_y:      [ 1 ],    // center y
-            compy_angle: [ 0 ],
-            comp_length: [ 10 ],   // width along x
-            comp_width:  [ 10 ],   // height along y
-            comp_height: [ 2 ]     // or however tall you want the compartment
-          };
+  if (config==="simple") {
+    return {
+      comp_x:      [-30, -15, 20, 20, -5],
+      comp_y:      [ -5,   6, -5,  9, -11],
+      compy_angle: [  0,   0,  0, 90,   90],
+      comp_length: [ 10,  10, 10, 10,   10],
+      comp_width:  [ 20,  20, 20, 20,   20],
+      comp_height: [  2,   2,  2,  2,    2]
+    };
+  }
+  else if (config==="test6") {
+    return {
+      comp_x:      [-1],
+      comp_y:      [ 1],
+      compy_angle: [ 0],
+      comp_length: [10],
+      comp_width:  [10],
+      comp_height: [ 2]
+    };
+  }
+  else if (config==="json" && jsonConfig) {
+    const comps = jsonConfig.arrangements.compartments;
+    const keys  = Object.keys(comps)
+                     .filter(k=>'MusteringStation');
+    return {
+      comp_x:      keys.map(k=> +comps[k].attributes.x),
+      comp_y:      keys.map(k=> +comps[k].attributes.y),
+      compy_angle: keys.map(k=> +comps[k].attributes.rotation || 0),
+      comp_length: keys.map(k=> +comps[k].attributes.length),
+      comp_width:  keys.map(k=> +comps[k].attributes.width),
+      comp_height: keys.map(k=> +comps[k].attributes.height)
+    };
+  }
+  // fallback to simple
+  return getCompartmentConfiguration("simple");
 }
 
 function createCompartments() {
@@ -317,6 +360,14 @@ function createPersons(num) {
             maxX: -2,  // 4 meters wide.
             minY: -6,  // y = -6 to -4 for a 2 meter high area.
             maxY: -4
+        };
+    } else if (deck_configuration === "json") {
+        const margin = 2;
+        PersonLocLimits = {
+            minX: deckBB.min.x + margin,
+            maxX: deckBB.max.x - margin,
+            minY: deckBB.min.y + margin,
+            maxY: deckBB.max.y - margin
         };
     }
     
@@ -542,3 +593,8 @@ $("#saveResultCSV").on("click", function() {
 $("#saveResultJSON").on("click", function() {
 
 });
+
+window.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('geometryFileInput')
+            .addEventListener('change', loadGeometryFile);
+  });
