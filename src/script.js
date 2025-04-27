@@ -503,6 +503,14 @@ function resetScene() {
 }
 
 function init() {
+// always reset to simple on page load/refresh
+  const simpleRadio = document.getElementById('radio1');
+  if (simpleRadio) simpleRadio.checked = true;
+  deck_configuration = 'simple';
+
+   initializeConfiguration();
+   createScene();
+   createDeck();
     deck_configuration = document.querySelector('input[name="options"]:checked').value;
     initializeConfiguration();
     createScene();
