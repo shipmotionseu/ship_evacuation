@@ -47,21 +47,27 @@ function loadGeometryFile(event) {
       mes_length = 2; mes_width = 2;
     }
     else if (deck_configuration === "json" && jsonConfig) {
-        // 1) Deck comes from the new JSON 'deck' entry:
-        const deckAttr = jsonConfig.arrangements.deck.attributes;
-        deck_length = +deckAttr.length;
-        deck_width  = +deckAttr.width;
+        // 1) Read deck size from JSON:
+        const deckEntry = jsonConfig.arrangements.deck;
+        if (deckEntry && deckEntry.attributes) {
+          deck_length = Number(deckEntry.attributes.length);
+          deck_width  = Number(deckEntry.attributes.width);
+        } else {
+          console.warn('JSON missing deck entry; using simple defaults');
+          deck_length = 105.2;
+          deck_width  = 34;
+        }
       
-        // 2) Compartment count (exclude the mustering station):
+        // 2) Count compartments (exclude MusteringStation):
         no_compartments = Object.keys(jsonConfig.arrangements.compartments)
                                  .filter(k => k !== 'MusteringStation').length;
       
-        // 3) Mustering station from JSON:
+        // 3) Mustering station parameters:
         const ms = jsonConfig.arrangements.compartments.MusteringStation.attributes;
-        mes_length   = +ms.length;
-        mes_width    = +ms.width;
-        mes_x_global = +ms.x;
-        mes_y_global = +ms.y;
+        mes_length   = Number(ms.length);
+        mes_width    = Number(ms.width);
+        mes_x_global = Number(ms.x);
+        mes_y_global = Number(ms.y);
       }
     
   }
@@ -138,17 +144,18 @@ function getCompartmentConfiguration(config) {
       comp_height: [ 2]
     };
   }
-  else if (config==="json" && jsonConfig) {
+  else if (config === "json" && jsonConfig) {
     const comps = jsonConfig.arrangements.compartments;
     const keys  = Object.keys(comps)
-                     .filter(k=>'MusteringStation');
+                     .filter(k => k !== 'MusteringStation');
+  
     return {
-      comp_x:      keys.map(k=> +comps[k].attributes.x),
-      comp_y:      keys.map(k=> +comps[k].attributes.y),
-      compy_angle: keys.map(k=> +comps[k].attributes.rotation || 0),
-      comp_length: keys.map(k=> +comps[k].attributes.length),
-      comp_width:  keys.map(k=> +comps[k].attributes.width),
-      comp_height: keys.map(k=> +comps[k].attributes.height)
+      comp_x:      keys.map(k => Number(comps[k].attributes.x)),
+      comp_y:      keys.map(k => Number(comps[k].attributes.y)),
+      compy_angle: keys.map(k => Number(comps[k].attributes.rotation) || 0),
+      comp_length: keys.map(k => Number(comps[k].attributes.length)),
+      comp_width:  keys.map(k => Number(comps[k].attributes.width)),
+      comp_height: keys.map(k => Number(comps[k].attributes.height))
     };
   }
   // fallback to simple
@@ -180,7 +187,11 @@ function addMusteringStation() {
         new THREE.BoxGeometry(mes_length, mes_width, 2.5),
         new THREE.MeshBasicMaterial({ color: 'red', opacity: 0.5, transparent: true })
     );
-    mustering.position.set(mes_x_global - deck_length / 2, mes_y_global - deck_width / 2, 0);
+    mustering.position.set(
+        mes_x_global - deck_length/2,
+        mes_y_global - deck_width/2,
+        0
+      );
 
     mustering_inner = new THREE.Mesh(
         new THREE.BoxGeometry(mes_length - 1, mes_width - 1, 2.5),
