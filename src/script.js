@@ -47,20 +47,23 @@ function loadGeometryFile(event) {
       mes_length = 2; mes_width = 2;
     }
     else if (deck_configuration === "json" && jsonConfig) {
-      const ms = jsonConfig.arrangements.compartments.MusteringStation.attributes;
-      no_compartments = Object.keys(jsonConfig.arrangements.compartments)
-                              .filter(k => k!=='MusteringStation').length;
-      mes_length  = +ms.length;
-      mes_width   = +ms.width;
-      // JSON x,y are deck-centered already
-      mes_x_global= +ms.x;
-      mes_y_global= +ms.y;
-      // If you want deck dimensions from JSON (optional):
-      if (ms.max_x && ms.max_y) {
-        deck_length = +ms.max_x;
-        deck_width  = +ms.max_y;
+        // 1) Deck comes from the new JSON 'deck' entry:
+        const deckAttr = jsonConfig.arrangements.deck.attributes;
+        deck_length = +deckAttr.length;
+        deck_width  = +deckAttr.width;
+      
+        // 2) Compartment count (exclude the mustering station):
+        no_compartments = Object.keys(jsonConfig.arrangements.compartments)
+                                 .filter(k => k !== 'MusteringStation').length;
+      
+        // 3) Mustering station from JSON:
+        const ms = jsonConfig.arrangements.compartments.MusteringStation.attributes;
+        mes_length   = +ms.length;
+        mes_width    = +ms.width;
+        mes_x_global = +ms.x;
+        mes_y_global = +ms.y;
       }
-    }
+    
   }
 
 function adjustCameraPosition() {
