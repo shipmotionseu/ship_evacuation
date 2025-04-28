@@ -620,3 +620,7 @@ window.addEventListener('DOMContentLoaded', () => {
     document.getElementById('geometryFileInput')
             .addEventListener('change', loadGeometryFile);
   });
+
+  if (typeof window !== 'undefined') {
+    window.loadGeometryFile = loadGeometryFile;
+  }
