@@ -420,80 +420,111 @@ function createPersons(num) {
     });
 }
 
-function animate() {
-    deltaT = clock.getDelta();
-    time_step += deltaT;  // update once per frame
+function directMovement(person,i) {
+    const deltaX = mustering_inner.position.x - person.geometry.position.x;
+    const deltaY = mustering_inner.position.y - person.geometry.position.y;
+    const angle = Math.atan2(deltaY, deltaX);
+    const move = deltaT * person.speed;
 
-    if (orbitControls && orbitControls.enabled) {
-        orbitControls.update();
-    }
-    
-    if (inMES.includes(0)) {
-        animationId = requestAnimationFrame(animate);
-        persons.forEach((person, i) => {
-            if (inMES[i] === 0) {
-               const useDirectAlgo = deck_configuration === 'simple'
-                    || deck_configuration === 'test6'
-                    || (deck_configuration === 'json' && customInterfaces.length === 0);
-                if (useDirectAlgo) {
-                const deltaX = mustering_inner.position.x - person.geometry.position.x;
-                const deltaY = mustering_inner.position.y - person.geometry.position.y;
-                const angle = Math.atan2(deltaY, deltaX);
-                const move = deltaT * person.speed;
+    // Remove Math.sign – angle already gives the correct direction.
+    const moveX = move * Math.cos(angle);
+    const moveY = move * Math.sin(angle);
+    const newPos = person.geometry.position.clone().add(new THREE.Vector3(moveX, moveY, 0));
+    const newBB = new THREE.Box3().setFromObject(person.geometry).translate(new THREE.Vector3(moveX, moveY, 0));
+    const collision = compartmentsBB.some((bb) => bb.intersectsBox(newBB));
 
-                // Remove Math.sign – angle already gives the correct direction.
-                const moveX = move * Math.cos(angle);
-                const moveY = move * Math.sin(angle);
-                const newPos = person.geometry.position.clone().add(new THREE.Vector3(moveX, moveY, 0));
-                const newBB = new THREE.Box3().setFromObject(person.geometry).translate(new THREE.Vector3(moveX, moveY, 0));
-                const collision = compartmentsBB.some((bb) => bb.intersectsBox(newBB));
-
-                if (!collision && deckBB.containsPoint(newPos)) {
-                    person.geometry.position.copy(newPos);
-                    person.BB.setFromObject(person.geometry);
-                    // Update accumulated distance:
-                    person.dist += move;
-                } else {
-                    if (!person.avoidingObstacle) {
-                        person.movingUp = Math.random() < 0.5;
-                        person.avoidingObstacle = true;
-                    }
-                    const verticalMove = person.movingUp ? move : -move;
-                    const testPos = person.geometry.position.clone().add(new THREE.Vector3(0, verticalMove, 0));
-                    const testBB = new THREE.Box3().setFromObject(person.geometry).translate(new THREE.Vector3(0, verticalMove, 0));
-                    if (!compartmentsBB.some((bb) => bb.intersectsBox(testBB)) && deckBB.containsPoint(testPos)) {
-                        person.geometry.position.copy(testPos);
-                    } else {
-                        person.stuckCount++;
-                        if (person.stuckCount > 3) {
-                            person.movingUp = !person.movingUp;
-                            person.stuckCount = 0;
-                        }
-                    }
-                }
-
-                // Record the new position and time:
-                person.x.push(person.geometry.position.x + deck_length / 2);
-                person.y.push(person.geometry.position.y);
-                person.time.push(time_step);
-                person.BB.setFromObject(person.geometry);
-                document.getElementById("movment" + String(i + 1)).innerText = person.dist.toFixed(2);
-                if (MusteringBB.intersectsBox(person.BB)) {
-                    inMES[i] = 1;
-                }
-            }
-            }
-        });
-        renderer.render(scene, camera);
+    if (!collision && deckBB.containsPoint(newPos)) {
+        person.geometry.position.copy(newPos);
+        person.BB.setFromObject(person.geometry);
+        // Update accumulated distance:
+        person.dist += move;
     } else {
-        console.log("All persons are in MES");
-        document.getElementById("startSim").disabled = false;
-        cancelAnimationFrame(animationId);
-        document.getElementById("plotFigure").disabled = false;
-        document.getElementById("saveResultCSV").disabled = false;
-        document.getElementById("saveResultJSON").disabled = false;
+        if (!person.avoidingObstacle) {
+            person.movingUp = Math.random() < 0.5;
+            person.avoidingObstacle = true;
+        }
+        const verticalMove = person.movingUp ? move : -move;
+        const testPos = person.geometry.position.clone().add(new THREE.Vector3(0, verticalMove, 0));
+        const testBB = new THREE.Box3().setFromObject(person.geometry).translate(new THREE.Vector3(0, verticalMove, 0));
+        if (!compartmentsBB.some((bb) => bb.intersectsBox(testBB)) && deckBB.containsPoint(testPos)) {
+            person.geometry.position.copy(testPos);
+        } else {
+            person.stuckCount++;
+            if (person.stuckCount > 3) {
+                person.movingUp = !person.movingUp;
+                person.stuckCount = 0;
+            }
+        }
+    }
+
+    // Record the new position and time:
+    person.x.push(person.geometry.position.x + deck_length / 2);
+    person.y.push(person.geometry.position.y);
+    person.time.push(time_step);
+    person.BB.setFromObject(person.geometry);
+    document.getElementById("movment" + String(i + 1)).innerText = person.dist.toFixed(2);
+    if (MusteringBB.intersectsBox(person.BB)) {
+        inMES[i] = 1;
     }
 }
+
+  function animate() {
+    // Compute elapsed time
+    deltaT = clock.getDelta();
+    time_step += deltaT;
+  
+    // Update orbit controls if enabled
+    if (orbitControls && orbitControls.enabled) {
+      orbitControls.update();
+    }
+  
+    // Continue animation until everyone reaches the mustering station
+    if (inMES.includes(0)) {
+      animationId = requestAnimationFrame(animate);
+  
+      persons.forEach((person, i) => {
+        if (inMES[i] !== 0) return;
+  
+        // 1) Non-JSON decks: always use direct vector movement
+        if (deck_configuration === 'simple' || deck_configuration === 'test6') {
+          directMovement(person,i);
+          return;
+        }
+  
+        // 2) JSON deck
+        if (deck_configuration === 'json') {
+          // 2a) No interfaces defined → direct movement
+          if (customInterfaces.length === 0) {
+            directMovement(person,i);
+            return;
+          }
+          // 2b) Interfaces exist → decide based on room membership
+          const insideRoom = isPositionInsideAnyCompartment(person.geometry.position);
+          if (!insideRoom) {
+            // Person is outside any compartment (room) → use direct movement
+            directMovement(person,i);
+          } else {
+            // Person is inside a compartment → use interface-aware routing
+            interfaceMovement(person, i);
+          }
+          return;
+        }
+      });
+  
+      renderer.render(scene, camera);
+    } else {
+      // All persons have reached the mustering station
+      console.log('All persons are in MES');
+      document.getElementById('startSim').disabled = false;
+      cancelAnimationFrame(animationId);
+      document.getElementById('plotFigure').disabled = false;
+      document.getElementById('saveResultCSV').disabled = false;
+      document.getElementById('saveResultJSON').disabled = false;
+    }
+  }
+  
+  
+
 function resetScene() {
         // Hide the graph container when restarting the scene
         document.getElementById("movment2D").style.display = "none";
