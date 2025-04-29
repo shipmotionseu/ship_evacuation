@@ -15,6 +15,7 @@ const clock = new THREE.Clock();
 let time_step = 0;
 
 let jsonConfig = null;
+let customInterfaces = [];
 
 function loadGeometryFile(event) {
     const file = event.target.files[0];
@@ -68,6 +69,19 @@ function loadGeometryFile(event) {
         mes_width    = Number(ms.width);
         mes_x_global = Number(ms.x);
         mes_y_global = Number(ms.y);
+        // 4) Interface definitions (if any):
+        const ifaceDefs = jsonConfig.arrangements.interfaces;
+        if (ifaceDefs && Object.keys(ifaceDefs).length > 0) {
+              // Convert each into a flat attributes object
+              customInterfaces = Object.keys(ifaceDefs).map(name => ({
+                name,
+                ...ifaceDefs[name].attributes
+              }));
+              console.warn("Custom geometry JSON contains interface definitions.");
+            } else {
+              console.warn("Custom geometry JSON contains no interface definitions.");
+              customInterfaces = [];
+            }
       }
     
   }
@@ -418,6 +432,10 @@ function animate() {
         animationId = requestAnimationFrame(animate);
         persons.forEach((person, i) => {
             if (inMES[i] === 0) {
+               const useDirectAlgo = deck_configuration === 'simple'
+                    || deck_configuration === 'test6'
+                    || (deck_configuration === 'json' && customInterfaces.length === 0);
+                if (useDirectAlgo) {
                 const deltaX = mustering_inner.position.x - person.geometry.position.x;
                 const deltaY = mustering_inner.position.y - person.geometry.position.y;
                 const angle = Math.atan2(deltaY, deltaX);
@@ -463,6 +481,7 @@ function animate() {
                 if (MusteringBB.intersectsBox(person.BB)) {
                     inMES[i] = 1;
                 }
+            }
             }
         });
         renderer.render(scene, camera);
