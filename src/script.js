@@ -535,7 +535,6 @@ function directMovement(person,i) {
             directMovement(person,i);
           } else {
             // Person is inside a compartment → use interface-aware routing
-            interfaceMovement(person, i);
           }
           return;
         }
@@ -560,6 +559,7 @@ function resetScene() {
         document.getElementById("movment2D").style.display = "none";
     
     cancelAnimationFrame(animationId);
+    disposePersons();
     disposeMeshes([
         ...compartmentsMeshes,
         mustering,
