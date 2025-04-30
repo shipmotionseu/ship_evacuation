@@ -269,6 +269,30 @@ function disposePersons() {
     }
 }
 
+function getInterfacesForCompartment(compName) {
+    return customInterfaces.filter(iface =>
+      Array.isArray(iface.connects) && iface.connects.includes(compName)
+    );
+   }
+
+/**
+* Pick the nearest interface (door) for this person.
+*/
+function findNearestInterface(person, ifaceList) {
+    let best = null, bestDist = Infinity;
+    ifaceList.forEach(iface => {
+      const px = iface.x - deck_length/2;
+      const py = iface.y - deck_width/2;
+      const pos = new THREE.Vector3(px, py, iface.z + iface.thickness/2);
+      const d = person.geometry.position.distanceTo(pos);
+      if (d < bestDist) {
+        bestDist = d;
+        best = { def: iface, pos };
+      }
+    });
+    return best;
+  }
+
 // Set up OrbitControls for scene rotation.
 function setupOrbitControls() {
   orbitControls = new OrbitControls(camera, renderer.domElement);
