@@ -15,7 +15,8 @@ const clock = new THREE.Clock();
 let time_step = 0;
 
 let jsonConfig = null;
-let customInterfaces = [];
+let customInterfaces = [];      // holds parsed interface attributes
+let interfaceMeshes = [];       // mesh instances for cleanup
 
 function loadGeometryFile(event) {
     const file = event.target.files[0];
@@ -216,6 +217,35 @@ function addMusteringStation() {
 
     scene.add(mustering);
 }
+
+/**
+ * Create a thin box for each interface in customInterfaces,
+ * add it to the scene and record it for later cleanup.
+ */
+function createInterfaces() {
+    // first, remove any old interface meshes
+    disposeMeshes(interfaceMeshes);
+    interfaceMeshes = [];
+  
+    customInterfaces.forEach(iface => {
+      const { x, y, z, width, height, thickness = 0.1, type } = iface;
+      const geom = new THREE.BoxGeometry(width, height, thickness);
+      const mat  = new THREE.MeshBasicMaterial({
+        color: type === 'door' ? 'saddlebrown' : 'gray',
+        transparent: true,
+        opacity: 0.6
+      });
+      const mesh = new THREE.Mesh(geom, mat);
+      // JSON coords are absolute; shift so deck is centered at (0,0)
+      mesh.position.set(
+        x - deck_length/2,
+        y - deck_width/2,
+        z + thickness/2
+      );
+      scene.add(mesh);
+      interfaceMeshes.push(mesh);
+    });
+  }
 
 function disposePersons() {
     if (persons && persons.length > 0) {
@@ -535,13 +565,20 @@ function resetScene() {
         mustering,
         mustering_inner,
         deck,
-        ...persons.map((p) => p.geometry),
-    ]);
+        persons.map((p) => p.geometry),
+        interfaceMeshes
+  ]);
+  interfaceMeshes = [];
 
     initializeConfiguration();
     createDeck();
     createCompartments();
     addMusteringStation();
+    // only draw interfaces if JSON mode and we have definitions
+    if (deck_configuration === 'json' && customInterfaces.length > 0) {
+       createInterfaces();
+    }
+    no_persons = Number(document.getElementById('no_persons').value) || 0;
     createPersons(no_persons);
     setupDragControls();
 
@@ -609,21 +646,22 @@ document.querySelectorAll('input[name="options"]').forEach((radio) => {
 init();
 
 $("#no_persons").on("change", function() {
+    // keep our JS var in sync
+    no_persons = Number(this.value) || 0;
+    // rebuild the “Person X movement length” UI if needed…
     const div = document.getElementById('IDresults');
-    no_persons = document.getElementById("no_persons").value
-    div.innerHTML = "";
-    const para = document.createElement('div');
-    for (let i = 0; i <= no_persons - 1; i++) {
-        const para = document.createElement('div');
-        para.innerText += "Person " + (i + 1) + " movment length: "
-        const divmovment = document.createElement('span');
-        divmovment.innerText = "0"
-        divmovment.id = "movment" + String(i + 1)
-        para.appendChild(divmovment);
-        div.appendChild(para);
+    div.innerHTML = '';
+    for (let i = 0; i < no_persons; i++) {
+      const para = document.createElement('div');
+      para.innerText = `Person ${i + 1} movement length: `;
+      const span = document.createElement('span');
+      span.id = `movment${i + 1}`;
+      span.innerText = '0';
+      para.appendChild(span);
+      div.appendChild(para);
     }
+    // regenerate the scene with the new count
     resetScene();
-
   });
 
   $("#plotFigure").on("click", function() {
