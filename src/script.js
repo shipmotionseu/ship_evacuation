@@ -192,6 +192,13 @@ function createCompartments() {
         compartment.rotation.z = (Math.PI * config.compy_angle[i]) / 180.0;
         scene.add(compartment);
 
+        if (deck_configuration === 'json' && jsonConfig) {
+            // we need the name so we can look up interfaces later
+            const compNames = Object
+              .keys(jsonConfig.arrangements.compartments)
+              .filter(k => k !== 'MusteringStation');
+            compartment.name = compNames[i];
+          }
         compartmentsMeshes.push(compartment);
         compartmentsBB.push(new THREE.Box3().setFromObject(compartment));
     }
@@ -269,29 +276,7 @@ function disposePersons() {
     }
 }
 
-function getInterfacesForCompartment(compName) {
-    return customInterfaces.filter(iface =>
-      Array.isArray(iface.connects) && iface.connects.includes(compName)
-    );
-   }
 
-/**
-* Pick the nearest interface (door) for this person.
-*/
-function findNearestInterface(person, ifaceList) {
-    let best = null, bestDist = Infinity;
-    ifaceList.forEach(iface => {
-      const px = iface.x - deck_length/2;
-      const py = iface.y - deck_width/2;
-      const pos = new THREE.Vector3(px, py, iface.z + iface.thickness/2);
-      const d = person.geometry.position.distanceTo(pos);
-      if (d < bestDist) {
-        bestDist = d;
-        best = { def: iface, pos };
-      }
-    });
-    return best;
-  }
 
 // Set up OrbitControls for scene rotation.
 function setupOrbitControls() {
@@ -522,6 +507,43 @@ function directMovement(person,i) {
     }
 }
 
+function interfaceAwareMovement(person, i) {
+    // 1) Figure out which compartment they’re in
+    const compIndex = compartmentsBB.findIndex(bb => bb.containsPoint(person.geometry.position));
+    const compName  = compartmentsMeshes[compIndex]?.name;
+    if (!compName) {
+      directMovement(person, i);
+      return;
+    }
+  
+    // 2) Find the door that connects this compartment to the deck
+    const iface = customInterfaces.find(
+      iface => Array.isArray(iface.connects)
+            && iface.connects.includes(compName)
+            && iface.connects.includes('deck')
+    );
+    if (!iface) {
+      // no door? just avoid as before
+      directMovement(person, i);
+      return;
+    }
+  
+    // 3) Compute the door’s position (JSON coords are deck-centered)
+    const targetX = iface.x - deck_length/2;
+    const targetY = iface.y - deck_width/2;
+  
+    // 4) Temporarily steer ‘mustering_inner’ to the door…
+    const oldPos = mustering_inner.position.clone();
+    mustering_inner.position.set(targetX, targetY, oldPos.z);
+  
+    // 5) Reuse your directMovement logic to navigate to the door
+    directMovement(person, i);
+  
+    // 6) Restore the real mustering station
+    mustering_inner.position.copy(oldPos);
+  }
+
+
   function animate() {
     // Compute elapsed time
     deltaT = clock.getDelta();
@@ -559,6 +581,7 @@ function directMovement(person,i) {
             directMovement(person,i);
           } else {
             // Person is inside a compartment → use interface-aware routing
+            interfaceAwareMovement(person, i);
           }
           return;
         }
