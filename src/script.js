@@ -79,6 +79,15 @@ function loadGeometryFile(event) {
                 ...ifaceDefs[name].attributes
               }));
               console.warn("Custom geometry JSON contains interface definitions.");
+              // Gather all compartment names mentioned in any interface
+                const interfaceCompNames = new Set();
+                customInterfaces.forEach(iface => {
+                if (Array.isArray(iface.connects)) {
+                    iface.connects
+                    .filter(n => n !== 'deck')
+                    .forEach(n => interfaceCompNames.add(n));
+                }
+                });
             } else {
               console.warn("Custom geometry JSON contains no interface definitions.");
               customInterfaces = [];
