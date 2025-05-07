@@ -17,6 +17,7 @@ let time_step = 0;
 let jsonConfig = null;
 let customInterfaces = [];      // holds parsed interface attributes
 let interfaceMeshes = [];       // mesh instances for cleanup
+let interfaceCompNames = new Set(); 
 
 function loadGeometryFile(event) {
     const file = event.target.files[0];
@@ -80,12 +81,11 @@ function loadGeometryFile(event) {
               }));
               console.warn("Custom geometry JSON contains interface definitions.");
               // Gather all compartment names mentioned in any interface
-                const interfaceCompNames = new Set();
                 customInterfaces.forEach(iface => {
                 if (Array.isArray(iface.connects)) {
-                    iface.connects
-                    .filter(n => n !== 'deck')
-                    .forEach(n => interfaceCompNames.add(n));
+                // populate the GLOBAL set instead of a local one:
+                 iface.connects.filter(n => n !== 'deck')
+                 .forEach(n => interfaceCompNames.add(n));
                 }
                 });
             } else {
@@ -452,17 +452,67 @@ function createPersons(num) {
         let human = new Human(i, 3 + Math.random() * 2, person_colors[i % person_colors.length]);
         let candidate;
         let attempts = 0;
-        do {
+        // —— BREAKDOWN BY deck_configuration —— 
+        if (deck_configuration === 'simple' || deck_configuration === 'l-shape') {
+          // ► simple & L-shape: keep everyone on the deck as before
+          do {
             candidate = getRandomPositionOnLimitedArea(PersonLocLimits);
             attempts++;
             if (attempts > 1000) {
-                console.warn(`Could not find valid starting position for person ${i} after 1000 attempts`);
-                break;
+              console.warn(`Could not find valid spot for Person ${i} on ${deck_configuration}`);
+              break;
             }
-        } while (
+          } while (
             isPositionInsideAnyCompartment(candidate) ||
             isPositionInMusteringStation(candidate)
-        );
+          );
+             } else if (deck_configuration === 'json') {
+          if (customInterfaces.length > 0
+              && interfaceCompNames.size > 0
+              && i === 0) {
+            // ► JSON + interfaces: Person 0 must start inside one of those interface compartments
+            do {
+              candidate = getRandomPositionOnLimitedArea(PersonLocLimits);
+              attempts++;
+              if (attempts > 1000) {
+                console.warn("Couldn't seed Person 0 inside an interface compartment");
+                break;
+              }
+            } while (
+              // 1) must be in *some* compartment…
+              !isPositionInsideAnyCompartment(candidate)
+              ||
+              // 2) …and that compartment’s name must be in our interfaceCompNames
+              ![...interfaceCompNames].some(name => {
+                const idx = compartmentsMeshes.findIndex(m => m.name === name);
+                return idx >= 0 && compartmentsBB[idx].containsPoint(candidate);
+              })
+            );
+          } else {
+            // ► JSON without interfaces (or Persons 1+) fall back to “deck only”
+            do {
+              candidate = getRandomPositionOnLimitedArea(PersonLocLimits);
+              attempts++;
+              if (attempts > 1000) {
+                console.warn(`Could not find valid spot for Person ${i} on JSON deck`);
+                break;
+              }
+            } while (
+              isPositionInsideAnyCompartment(candidate) ||
+              isPositionInMusteringStation(candidate)
+            );
+          }
+             } else {
+          // ► any other (future?) configuration: default to “deck only”
+          do {
+            candidate = getRandomPositionOnLimitedArea(PersonLocLimits);
+            attempts++;
+            if (attempts > 1000) { break; }
+          } while (
+            isPositionInsideAnyCompartment(candidate) ||
+            isPositionInMusteringStation(candidate)
+          );
+        }
         human.geometry.position.copy(candidate);
         return human;
     });
