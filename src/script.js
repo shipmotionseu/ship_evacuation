@@ -195,7 +195,10 @@ function createCompartments() {
     for (let i = 0; i < no_compartments; i++) {
         const compartment = new THREE.Mesh(
             new THREE.BoxGeometry(config.comp_length[i], config.comp_width[i], config.comp_height[i]),
-            new THREE.MeshBasicMaterial({ color: 'yellow' })
+            new THREE.MeshBasicMaterial({ color: 'yellow',
+                transparent: true,
+                opacity: 0.3   // adjust between 0 (invisible) and 1 (opaque)
+             })
         );
         compartment.position.set(config.comp_x[i], config.comp_y[i], 1);
         compartment.rotation.z = (Math.PI * config.compy_angle[i]) / 180.0;
