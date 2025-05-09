@@ -597,10 +597,12 @@ function interfaceAwareMovement(person, i) {
     // 4) Temporarily steer ‘mustering_inner’ to the door…
     const oldPos = mustering_inner.position.clone();
     mustering_inner.position.set(targetX, targetY, oldPos.z);
-  
-    // 5) Reuse your directMovement logic to navigate to the door
-    directMovement(person, i);
-  
+
+  // 5) Allow exit by removing the current compartment’s BB from collision checks
+  const savedBB = compartmentsBB.splice(compIndex, 1)[0];
+  directMovement(person, i);
+  compartmentsBB.splice(compIndex, 0, savedBB);
+
     // 6) Restore the real mustering station
     mustering_inner.position.copy(oldPos);
   }
