@@ -379,6 +379,8 @@ class Human {
         this.time = [];
         this.dist = 0;
         scene.add(this.geometry);
+        this.hasReachedInterface = false;
+        this.currentCompartmentIndex = null;     // directMovement can ignore the right room
     }
 }
 
@@ -532,7 +534,13 @@ function directMovement(person,i) {
     const moveY = move * Math.sin(angle);
     const newPos = person.geometry.position.clone().add(new THREE.Vector3(moveX, moveY, 0));
     const newBB = new THREE.Box3().setFromObject(person.geometry).translate(new THREE.Vector3(moveX, moveY, 0));
-    const collision = compartmentsBB.some((bb) => bb.intersectsBox(newBB));
+    let collision = compartmentsBB.some((bb, idx) => {
+        if (idx === person.currentCompartmentIndex && person.hasReachedInterface === false) {
+            // still inside: ignore this one so you can pass through the door gap
+            return false;
+        }
+        return bb.intersectsBox(newBB);
+    });
 
     if (!collision && deckBB.containsPoint(newPos)) {
         person.geometry.position.copy(newPos);
@@ -572,6 +580,7 @@ function directMovement(person,i) {
 function interfaceAwareMovement(person, i) {
     // 1) Figure out which compartment they’re in
     const compIndex = compartmentsBB.findIndex(bb => bb.containsPoint(person.geometry.position));
+    person.currentCompartmentIndex = compIndex;
     const compName  = compartmentsMeshes[compIndex]?.name;
     if (!compName) {
       directMovement(person, i);
@@ -593,7 +602,14 @@ function interfaceAwareMovement(person, i) {
     // 3) Compute the door’s position (JSON coords are deck-centered)
     const targetX = iface.x - deck_length/2;
     const targetY = iface.y - deck_width/2;
-  
+    // if we’re close enough to the door, switch to mustering logic
+    const distToDoor = person.geometry.position.distanceTo(
+      new THREE.Vector3(targetX, targetY, person.geometry.position.z)
+    );
+    if (distToDoor < 0.5) {
+      person.hasReachedInterface = true;   // NEW
+      return;                              // leave the room this frame
+    }
     // 4) Temporarily steer ‘mustering_inner’ to the door…
     const oldPos = mustering_inner.position.clone();
     mustering_inner.position.set(targetX, targetY, oldPos.z);
@@ -637,14 +653,20 @@ function interfaceAwareMovement(person, i) {
             return;
           }
           // 2b) Interfaces exist → decide based on room membership
-          const insideRoom = isPositionInsideAnyCompartment(person.geometry.position);
-          if (!insideRoom) {
-            // Person is outside any compartment (room) → use direct movement
-            directMovement(person,i);
+          if (!person.hasReachedInterface) {
+            // still need to exit your room
+            const insideRoom = isPositionInsideAnyCompartment(person.geometry.position);
+            if (insideRoom) {
+              interfaceAwareMovement(person, i);
+            } else {
+              // just left the room—flip the flag and head to muster
+              person.hasReachedInterface = true;
+              directMovement(person,i);
+            }
           } else {
-            // Person is inside a compartment → use interface-aware routing
-            interfaceAwareMovement(person, i);
-          }
+            // door reached: go straight to the mustering station
+          directMovement(person,i);
+        }
           return;
         }
       });
