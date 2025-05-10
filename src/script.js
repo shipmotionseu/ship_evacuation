@@ -535,8 +535,9 @@ function directMovement(person,i) {
     const newPos = person.geometry.position.clone().add(new THREE.Vector3(moveX, moveY, 0));
     const newBB = new THREE.Box3().setFromObject(person.geometry).translate(new THREE.Vector3(moveX, moveY, 0));
     let collision = compartmentsBB.some((bb, idx) => {
-        if (idx === person.currentCompartmentIndex && person.hasReachedInterface === false) {
-            // still inside: ignore this one so you can pass through the door gap
+        // NEW: as long as you’re still inside your originating compartment, ignore its BB
+        if (idx === person.currentCompartmentIndex
+            && bb.containsPoint(person.geometry.position)) {
             return false;
         }
         return bb.intersectsBox(newBB);
@@ -655,7 +656,9 @@ function interfaceAwareMovement(person, i) {
           // 2b) Interfaces exist → decide based on room membership
           if (!person.hasReachedInterface) {
             // still need to exit your room
-            const insideRoom = isPositionInsideAnyCompartment(person.geometry.position);
+            const insideRoom = compartmentsBB.some(bb =>
+              bb.containsPoint(person.geometry.position)
+            );
             if (insideRoom) {
               interfaceAwareMovement(person, i);
             } else {
