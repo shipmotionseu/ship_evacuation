@@ -14,7 +14,7 @@ let deltaT = 0;
 const clock = new THREE.Clock();
 let time_step = 0;
 
-let jsonConfig = null;
+let deckArrangement = null;
 let customInterfaces = [];      // holds parsed interface attributes
 let interfaceMeshes = [];       // mesh instances for cleanup
 let interfaceCompNames = new Set(); 
@@ -24,7 +24,7 @@ function loadGeometryFile(event) {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = e => {
-      jsonConfig = JSON.parse(e.target.result);
+      deckArrangement = JSON.parse(e.target.result);
       deck_configuration = 'json';
       // re‐draw with new data
       resetScene();
@@ -49,9 +49,9 @@ function loadGeometryFile(event) {
       mes_x_global = 11; mes_y_global = 11;
       mes_length = 2; mes_width = 2;
     }
-    else if (deck_configuration === "json" && jsonConfig) {
+    else if (deck_configuration === "json" && deckArrangement) {
         // 1) Read deck size from JSON:
-        const deckEntry = jsonConfig.arrangements.deck;
+        const deckEntry = deckArrangement.arrangements.deck;
         if (deckEntry && deckEntry.attributes) {
           deck_length = Number(deckEntry.attributes.length);
           deck_width  = Number(deckEntry.attributes.width);
@@ -62,17 +62,17 @@ function loadGeometryFile(event) {
         }
       
         // 2) Count compartments (exclude MusteringStation):
-        no_compartments = Object.keys(jsonConfig.arrangements.compartments)
+        no_compartments = Object.keys(deckArrangement.arrangements.compartments)
                                  .filter(k => k !== 'MusteringStation').length;
       
         // 3) Mustering station parameters:
-        const ms = jsonConfig.arrangements.compartments.MusteringStation.attributes;
+        const ms = deckArrangement.arrangements.compartments.MusteringStation.attributes;
         mes_length   = Number(ms.length);
         mes_width    = Number(ms.width);
         mes_x_global = Number(ms.x);
         mes_y_global = Number(ms.y);
         // 4) Interface definitions (if any):
-        const ifaceDefs = jsonConfig.arrangements.interfaces;
+        const ifaceDefs = deckArrangement.arrangements.interfaces;
         if (ifaceDefs && Object.keys(ifaceDefs).length > 0) {
               // Convert each into a flat attributes object
               customInterfaces = Object.keys(ifaceDefs).map(name => ({
@@ -168,8 +168,8 @@ function getCompartmentConfiguration(config) {
       comp_height: [ 2]
     };
   }
-  else if (config === "json" && jsonConfig) {
-    const comps = jsonConfig.arrangements.compartments;
+  else if (config === "json" && deckArrangement) {
+    const comps = deckArrangement.arrangements.compartments;
     const keys  = Object.keys(comps)
                      .filter(k => k !== 'MusteringStation');
   
@@ -204,10 +204,10 @@ function createCompartments() {
         compartment.rotation.z = (Math.PI * config.compy_angle[i]) / 180.0;
         scene.add(compartment);
 
-        if (deck_configuration === 'json' && jsonConfig) {
+        if (deck_configuration === 'json' && deckArrangement) {
             // we need the name so we can look up interfaces later
             const compNames = Object
-              .keys(jsonConfig.arrangements.compartments)
+              .keys(deckArrangement.arrangements.compartments)
               .filter(k => k !== 'MusteringStation');
             compartment.name = compNames[i];
           }
