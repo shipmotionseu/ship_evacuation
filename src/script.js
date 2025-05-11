@@ -535,7 +535,8 @@ function directMovement(person,i) {
     const newPos = person.geometry.position.clone().add(new THREE.Vector3(moveX, moveY, 0));
     const newBB = new THREE.Box3().setFromObject(person.geometry).translate(new THREE.Vector3(moveX, moveY, 0));
     let collision = compartmentsBB.some((bb, idx) => {
-        // NEW: as long as you’re still inside your originating compartment, ignore its BB
+        // ignore the wall of the compartment you’re currently inside—
+        // so you can actually step through the opening
         if (idx === person.currentCompartmentIndex
             && bb.containsPoint(person.geometry.position)) {
             return false;
