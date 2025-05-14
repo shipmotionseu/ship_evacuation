@@ -1,93 +1,114 @@
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">  
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <script type="importmap">
     {
-      "imports": {"three": "./three.js-master/build/three.module.js",
+      "imports": {
+        "three": "./three.js-master/build/three.module.js",
         "three/addons/": "./three.js-master/examples/jsm/"
       }
-
     }
   </script>
-<title>Ship Evacuation</title>
+  <title>Ship Evacuation</title>
+  <style>
+    body { font-family: Helvetica, sans-serif; margin: 0; padding: 20px; background-color: #f4f4f4; color: #333; }
+    #main { width:95%; max-width: 1200px; border:1px solid #ccc; padding:20px; background-color: #fff; margin: 20px auto; box-shadow: 0 0 10px rgba(0,0,0,0.1); border-radius: 8px; }
+    h1 { color: #333; text-align: center; }
+    p, div { margin-bottom: 15px; line-height: 1.6; }
+    input[type="number"], input[type="file"] { padding: 8px; border: 1px solid #ccc; border-radius: 4px; margin-left: 5px; }
+    button {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      text-align: center;
+      text-decoration: none;
+      display: inline-block;
+      font-size: 14px;
+      margin: 4px 2px;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: background-color 0.3s ease;
+    }
+    button:hover { background-color: #0056b3; }
+    button:disabled { background-color: #ccc; cursor: not-allowed; }
+    .radio-container { margin-bottom: 20px; padding: 10px; background-color: #f9f9f9; border-radius: 4px; }
+    .radio-container label { margin-right: 15px; }
+    #IDresults div { padding: 2px 0; }
+    #movment2D, #movment3D, #envinformation { border: 1px solid #ddd; padding:10px; margin-top:10px; border-radius: 4px; min-height: 300px; }
+    small { font-size: 0.8em; color: #555; }
+  </style>
 </head>
-  
-
-    
 <body>
   <script src="https://code.jquery.com/jquery-3.7.0.js"></script>
   <script src="https://cdn.plot.ly/plotly-2.25.2.min.js" charset="utf-8"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <div id="main" style="width:95%;border:1px solid grey; padding:20px; font-family:Helvetica, sans-serif; margin: 0 auto;">
-<h1>Ship Corridor Creator</h1> 
-<div>
-<div align="right">
-  <p style="width:90%" align="right"> <small>by Tomasz Hinz, Gdansk Tech, Henrique M. Gaspar, NTNU i Alesund and Jesus A. Rodriguez Perez, Datasky<br>v0.1, Dec 2024.</small></p>
-</div>
-<script type="module" src="src/script.js"></script>
-<p>Ship Evacuation is a tool to simulate the movement of persons in a ship corridor. The simulation is performed for a given number of persons. The simulation results are presented in the form of a 3D visualisation and 2D plot. The results can be saved to a CSV or JSON file.</p>
-</div>
-<p>Number of persons in simulation: <input title="nopersons" type="number" id="no_persons" value="2" min="1" max="50" onclick=""></p>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script> <div id="main">
+    <h1>Ship Corridor Creator</h1>
+    <div>
+      <div align="right">
+        <p style="width:90%" align="right"> <small>by Tomasz Hinz, Gdansk Tech, Henrique M. Gaspar, NTNU i Alesund and Jesus A. Rodriguez Perez, Datasky<br>v0.1, Dec 2024.</small></p>
+      </div>
+      <p>Ship Evacuation is a tool to simulate the movement of persons in a ship corridor. The simulation is performed for a given number of persons. The simulation results are presented in the form of a 3D visualisation and 2D plot. The results can be saved to a CSV or JSON file.</p>
+    </div>
+    <p>Number of persons in simulation: <input title="nopersons" type="number" id="no_persons" value="2" min="1" max="50"> </input></p>
 
-<script>let no_persons = document.getElementById("no_persons").value;
-let deck_configuration= "simple";
-  let no_compartments=5;
-  let compartments = [];
-  let compartmentsBB = [];
-</script>
-<div ID='IDresults'></div>
-<script>
-  const div = document.getElementById('IDresults');
-  for(let i =0; i<=no_persons-1; i++){
-      const para = document.createElement('div');
-      para.innerText += "Person "+(i+1)+" movment length: "
-      const divmovment = document.createElement('span');
-      divmovment.innerText="0"
-      divmovment.id="movment"+String(i+1)
-      para.appendChild(divmovment);
-      div.appendChild(para);
-  }   
-  </script>
-<p><button id="startSim" type="button">START</button>
-  <button id="plotFigure" type="button" disabled>Plot results!</button>
-  <button id="saveResultCSV" type="button" disabled>Save results to CSV!</button>
-  <button id="saveResultJSON" type="button" disabled>Save results to JSON!</button></p>
-  <script>
+    <div id="IDresults"></div>
+
+    <p>
+      <button id="startSim" type="button">START</button>
+      <button id="plotFigure" type="button" disabled>Plot results!</button>
+      <button id="saveResultCSV" type="button" disabled>Save results to CSVs (zipped)</button>
+      <button id="saveResultSingleCSV" type="button" disabled>Save all to Single CSV</button> <button id="saveResultJSON" type="button" disabled>Save results to JSON!</button>
+    </p>
+    <script>
+      // Initial state of buttons
       document.getElementById("plotFigure").disabled = true;
       document.getElementById("saveResultCSV").disabled = true;
+      document.getElementById("saveResultSingleCSV").disabled = true; // Disable new button
       document.getElementById("saveResultJSON").disabled = true;
       document.getElementById("startSim").disabled = false;
+    </script>
+
+    <div class="radio-container">
+      <input type="radio" id="radio1" name="options" value="simple" checked>
+      <label for="radio1">Simple deck</label>
+      <input type="radio" id="radio2" name="options" value="test6">
+      <label for="radio2">L-shape deck - MSC.1/Circ.1533 Test 6: Rounding corners</label>
+      <input type="radio" id="radio3" name="options" value="json" onclick="document.getElementById('geometryFileInput').click()">
+      <label for="radio3">Custom geometry (load from JSON file)</label>
+      <input type="file" id="geometryFileInput" accept=".json" style="display: none;" onchange="loadGeometryFile(event)">
+    </div>
+
+    <p><div id='movment2D' style="width:100%;"></div></p>
+    <p><div id='movment3D' style="width:100%;"></div></p>
+    <p><div id='envinformation' style="width:100%;"></div></p>
+  </div>
+
+  <script type="module" src="src/script.js"></script>
+
+  <script>
+    // Initialize the display for number of persons (this part was in your original index.html)
+    // It's better to handle this within script.js after no_persons is set,
+    // but if you want to keep it here, ensure it's called/updated when no_persons changes.
+    function updatePersonMovementDisplay(count) {
+        const div = document.getElementById('IDresults');
+        div.innerHTML = ''; // Clear previous entries
+        for (let i = 0; i < count; i++) {
+            const para = document.createElement('div');
+            para.innerText = "Person " + (i + 1) + " movement length: ";
+            const divmovment = document.createElement('span');
+            divmovment.innerText = "0";
+            divmovment.id = "movment" + String(i + 1);
+            para.appendChild(divmovment);
+            div.appendChild(para);
+        }
+    }
+    // Initial call based on default value, will be updated by script.js logic
+    updatePersonMovementDisplay(document.getElementById("no_persons").value);
   </script>
 
-<div class="radio-container">
-  <input type="radio" id="radio1" name="options" value="simple" checked>
-  <label for="radio1">Simple deck</label>
-  <input type="radio" id="radio2" name="options" value="test6">
-  <label for="radio2">L-shape deck - MSC.1/Circ.1533 Test 6: Rounding corners</label>
-  <input
-  type="radio"
-  id="radio3"
-  name="options"
-  value="json"
-  onclick="document.getElementById('geometryFileInput').click()"
-/>
-  <label for="radio3">Custom geometry (load from JSON file)</label>
-  <input
-  type="file"
-  id="geometryFileInput"
-  accept=".json"
-  style="display: none;"
-  onchange="loadGeometryFile(event)"
-/>
-</div>
-
-<p><div id='movment2D' style="width:100%;border:1px solid rgb(0, 255, 0)"><!--Plotly will be drawn inside this DIV --></div></p>
-<p><div id='movment3D' style="width:100%;border:1px solid rgb(255, 0, 0)"><!--Three.js will be drawn inside this DIV --></div></p>
-<p><div id='envinformation' style="width:100%;border:1px solid rgb(255, 0, 255)">
-</div></p>
-</div>
-</body>    
-    
+</body>
 </html>
