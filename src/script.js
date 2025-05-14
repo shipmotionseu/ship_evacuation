@@ -105,7 +105,7 @@ function adjustCameraPosition() {
     // Compute the ideal distance so the deck exactly fills the view:
     const requiredZ = (maxDeckSize / 2) / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
     // Increase the distance so the deck occupies only about 60% of the view:
-    camera.position.z = requiredZ / 0.6;
+    camera.position.z = requiredZ / 1.7;
     camera.updateProjectionMatrix();
 }
 
