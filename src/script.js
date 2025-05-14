@@ -3,6 +3,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { DragControls } from 'three/addons/controls/DragControls.js';
 
 let no_compartments = 5;
+let no_persons = 2; // Initialize with the default value from your HTML input
+
 let compartments = [], compartmentsBB = [], compartmentsMeshes = [];
 let animationId, scene, camera, renderer, deck, deckBB, mustering, mustering_inner, MusteringBB;
 let persons = [], inMES = [];
@@ -739,6 +741,7 @@ function init() {
     createDeck();
     createCompartments();
     addMusteringStation();
+    no_persons = Number(document.getElementById('no_persons').value) || 2;
     createPersons(no_persons);
     
     // Set up DragControls (they start disabled).
@@ -819,20 +822,18 @@ $("#no_persons").on("change", function() {
     Plotly.newPlot(TESTER, data);
 });
 
-
 $("#saveResultCSV").on("click", function() {
-    for (let i = 0; i < no_persons; i++) {
-        let results_textline = "time;x;y;z\n";
-        console.log("person "+i+" movment points");
-        for (let j = 0; j < persons[i].x.length; j++) {
-            results_textline+=String(persons[i].time[j]+";"+persons[i].x[j])+";"+String(persons[i].y[j])+";"+String(persons[i].z[j])+"\n";
-        }
-    var myFile = new File([results_textline], "movment_points_person_"+String(i+1)+".csv", {
-        type: "text/plain;charset=utf-8"
-    });
-    console.log("save file for person "+i);
-    saveAs(myFile);
-}
+  for (let i = 0; i < no_persons; i++) {
+      let results_textline = "time;x;y;z\n";
+      console.log("person "+i+" movment points");
+      for (let j = 0; j < persons[i].x.length; j++) {
+          results_textline+=String(persons[i].time[j]+";"+persons[i].x[j])+";"+String(persons[i].y[j])+";"+String(persons[i].z[j])+"\n";
+      }
+      var myFile = new File([results_textline], "movment_points_person_"+String(i+1)+".csv", {
+          type: "text/plain;charset=utf-8"
+      });
+      saveAs(myFile); // This initiates a file download for each person
+  }
 });
 
 $("#saveResultJSON").on("click", function() {
