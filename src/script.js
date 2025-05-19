@@ -814,12 +814,33 @@ $("#no_persons").on("change", function() {
             x: persons[i].x,
             y: persons[i].y,
             mode: 'lines',
+            lines: { width: 4 },
             name: 'person ' + String(i + 1)
         });
     }
 
     // Create the plot.
-    Plotly.newPlot(TESTER, data);
+    var layout = {
+    title: 'Movement Paths',
+    xaxis: { title: 'X position' },
+    yaxis: { title: 'Y position' },
+    width: 3000,   // higher width
+    height: 1200,  // higher height
+};
+
+var config = {
+    responsive: true,
+    displaylogo: false,
+    toImageButtonOptions: {
+        format: 'png',
+        filename: 'high_res_plot',
+        height: 2400,  // set higher for better DPI
+        width: 6000,
+        scale: 4       // scale multiplies width/height and improves DPI
+    }
+};
+
+    Plotly.newPlot(TESTER, data, layout, config);
 });
 
 $("#saveResultCSV").on("click", function() {
