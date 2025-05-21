@@ -181,7 +181,8 @@ function getCompartmentConfiguration(config) {
       compy_angle: keys.map(k => Number(comps[k].attributes.rotation) || 0),
       comp_length: keys.map(k => Number(comps[k].attributes.length)),
       comp_width:  keys.map(k => Number(comps[k].attributes.width)),
-      comp_height: keys.map(k => Number(comps[k].attributes.height))
+      comp_height: keys.map(k => Number(comps[k].attributes.height)),
+      comp_color:  keys.map(k => comps[k].attributes.color || 'yellow')
     };
   }
   // fallback to simple
@@ -192,14 +193,17 @@ function createCompartments() {
     const config = getCompartmentConfiguration(deck_configuration);
     compartments = [];
     compartmentsBB = [];
-    compartmentsMeshes = [];
+    compartmentsMeshes = []; 
 
     for (let i = 0; i < no_compartments; i++) {
+        const color = config.comp_color && config.comp_color[i] ? config.comp_color[i] : 'yellow';
+
         const compartment = new THREE.Mesh(
             new THREE.BoxGeometry(config.comp_length[i], config.comp_width[i], config.comp_height[i]),
-            new THREE.MeshBasicMaterial({ color: 'yellow',
+            new THREE.MeshBasicMaterial({
+                color: color,        // <-- USE JSON COLOR
                 transparent: true,
-                opacity: 0.3   // adjust between 0 (invisible) and 1 (opaque)
+                opacity: 0.3
              })
         );
         compartment.position.set(config.comp_x[i], config.comp_y[i], 1);
@@ -212,7 +216,7 @@ function createCompartments() {
               .keys(deckArrangement.arrangements.compartments)
               .filter(k => k !== 'MusteringStation');
             compartment.name = compNames[i];
-          }
+        }
         compartmentsMeshes.push(compartment);
         compartmentsBB.push(new THREE.Box3().setFromObject(compartment));
     }
