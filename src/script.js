@@ -828,8 +828,8 @@ $("#no_persons").on("change", function() {
     title: 'Movement Paths',
     xaxis: { title: 'X position' },
     yaxis: { title: 'Y position' },
-    width: 3000,   // higher width
-    height: 1200,  // higher height
+    width: 1750,   // higher width
+    height: 700,  // higher height
 };
 
 var config = {
@@ -838,8 +838,8 @@ var config = {
     toImageButtonOptions: {
         format: 'png',
         filename: 'high_res_plot',
-        height: 2400,  // set higher for better DPI
-        width: 6000,
+        height: 1400,  // set higher for better DPI
+        width: 3500,
         scale: 4       // scale multiplies width/height and improves DPI
     }
 };
