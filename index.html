@@ -1,0 +1,93 @@
+<html lang="en">
+<head>
+  <meta charset="utf-8">  
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script type="importmap">
+    {
+      "imports": {"three": "./three.js-master/build/three.module.js",
+        "three/addons/": "./three.js-master/examples/jsm/"
+      }
+
+    }
+  </script>
+<title>Ship Evacuation</title>
+</head>
+  
+
+    
+<body>
+  <script src="https://code.jquery.com/jquery-3.7.0.js"></script>
+  <script src="https://cdn.plot.ly/plotly-2.25.2.min.js" charset="utf-8"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <div id="main" style="width:95%;border:1px solid grey; padding:20px; font-family:Helvetica, sans-serif; margin: 0 auto;">
+<h1>Ship Corridor Creator</h1> 
+<div>
+<div align="right">
+  <p style="width:90%" align="right"> <small>by Tomasz Hinz, Gdansk Tech, Henrique M. Gaspar, NTNU i Alesund and Jesus A. Rodriguez Perez, Datasky<br>v0.1, Dec 2024.</small></p>
+</div>
+<script type="module" src="src/script.js"></script>
+<p>Ship Evacuation is a tool to simulate the movement of persons in a ship corridor. The simulation is performed for a given number of persons. The simulation results are presented in the form of a 3D visualisation and 2D plot. The results can be saved to a CSV or JSON file.</p>
+</div>
+<p>Number of persons in simulation: <input title="nopersons" type="number" id="no_persons" value="2" min="1" max="50" onclick=""></p>
+
+<script>let no_persons = document.getElementById("no_persons").value;
+let deck_configuration= "simple";
+  let no_compartments=5;
+  let compartments = [];
+  let compartmentsBB = [];
+</script>
+<div ID='IDresults'></div>
+<script>
+  const div = document.getElementById('IDresults');
+  for(let i =0; i<=no_persons-1; i++){
+      const para = document.createElement('div');
+      para.innerText += "Person "+(i+1)+" movment length: "
+      const divmovment = document.createElement('span');
+      divmovment.innerText="0"
+      divmovment.id="movment"+String(i+1)
+      para.appendChild(divmovment);
+      div.appendChild(para);
+  }   
+  </script>
+<p><button id="startSim" type="button">START</button>
+  <button id="plotFigure" type="button" disabled>Plot results!</button>
+  <button id="saveResultCSV" type="button" disabled>Save results to CSV!</button>
+  <button id="saveResultJSON" type="button" disabled>Save results to JSON!</button></p>
+  <script>
+      document.getElementById("plotFigure").disabled = true;
+      document.getElementById("saveResultCSV").disabled = true;
+      document.getElementById("saveResultJSON").disabled = true;
+      document.getElementById("startSim").disabled = false;
+  </script>
+
+<div class="radio-container">
+  <input type="radio" id="radio1" name="options" value="simple" checked>
+  <label for="radio1">Simple deck</label>
+  <input type="radio" id="radio2" name="options" value="test6">
+  <label for="radio2">L-shape deck - MSC.1/Circ.1533 Test 6: Rounding corners</label>
+  <input
+  type="radio"
+  id="radio3"
+  name="options"
+  value="json"
+  onclick="document.getElementById('geometryFileInput').click()"
+/>
+  <label for="radio3">Custom geometry (load from JSON file)</label>
+  <input
+  type="file"
+  id="geometryFileInput"
+  accept=".json"
+  style="display: none;"
+  onchange="loadGeometryFile(event)"
+/>
+</div>
+
+<p><div id='movment2D' style="width:100%;border:1px solid rgb(0, 255, 0)"><!--Plotly will be drawn inside this DIV --></div></p>
+<p><div id='movment3D' style="width:100%;border:1px solid rgb(255, 0, 0)"><!--Three.js will be drawn inside this DIV --></div></p>
+<p><div id='envinformation' style="width:100%;border:1px solid rgb(255, 0, 255)">
+</div></p>
+</div>
+</body>    
+    
+</html>
