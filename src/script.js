@@ -12,14 +12,39 @@ let orbitControls, compDragControls, MESdragControls;
 
 let deck_configuration = "simple";
 let mes_x_global, mes_y_global, mes_width, mes_length, deck_length, deck_width;
+let deckMinX = 0, deckMaxX = 0, deckMinY = 0, deckMaxY = 0;
+let deckCenterX = 0, deckCenterY = 0;
 let deltaT = 0;
 const clock = new THREE.Clock();
 let time_step = 0;
 
 let deckArrangement = null;
+let deckOutline = null;         // optional outline when loaded from JSON
 let customInterfaces = [];      // holds parsed interface attributes
 let interfaceMeshes = [];       // mesh instances for cleanup
 let interfaceCompNames = new Set(); 
+
+// Normalize a deck outline array (supports [{x,y}] or [[x,y]]).
+function parseDeckOutline(deckEntry) {
+    deckOutline = null;
+    if (!deckEntry) return;
+    const raw = deckEntry.outline || deckEntry.attributes?.outline;
+    if (!Array.isArray(raw)) return;
+
+    const points = raw.map((pt) => {
+        if (Array.isArray(pt) && pt.length >= 2) {
+            return { x: Number(pt[0]), y: Number(pt[1]) };
+        }
+        if (pt && typeof pt === 'object' && 'x' in pt && 'y' in pt) {
+            return { x: Number(pt.x), y: Number(pt.y) };
+        }
+        return null;
+    }).filter((pt) => pt && Number.isFinite(pt.x) && Number.isFinite(pt.y));
+
+    if (points.length >= 3) {
+        deckOutline = points;
+    }
+}
 
 function loadGeometryFile(event) {
     const file = event.target.files[0];
@@ -35,7 +60,11 @@ function loadGeometryFile(event) {
     reader.readAsText(file);
   }
 
-  function initializeConfiguration() {
+function initializeConfiguration() {
+    // Reset outline unless JSON redefines it.
+    deckOutline = null;
+    deckCenterX = 0; deckCenterY = 0;
+    deckMinX = 0; deckMaxX = 0; deckMinY = 0; deckMaxY = 0;
     if (deck_configuration === "simple") {
       no_compartments = 5;
       mes_x_global  = 105;  
@@ -44,12 +73,18 @@ function loadGeometryFile(event) {
       mes_width     = 10;
       deck_length   = 105.2;
       deck_width    = 34;
+      deckMinX = -deck_length / 2; deckMaxX = deck_length / 2;
+      deckMinY = -deck_width / 2;  deckMaxY = deck_width / 2;
+      deckCenterX = 0; deckCenterY = 0;
     }
     else if (deck_configuration === "test6") {
       no_compartments = 1;
       deck_length = 12; deck_width = 12;
       mes_x_global = 11; mes_y_global = 11;
       mes_length = 2; mes_width = 2;
+      deckMinX = -deck_length / 2; deckMaxX = deck_length / 2;
+      deckMinY = -deck_width / 2;  deckMaxY = deck_width / 2;
+      deckCenterX = 0; deckCenterY = 0;
     }
     else if (deck_configuration === "json" && deckArrangement) {
         // 1) Read deck size from JSON:
@@ -73,6 +108,28 @@ function loadGeometryFile(event) {
         mes_width    = Number(ms.width);
         mes_x_global = Number(ms.x);
         mes_y_global = Number(ms.y);
+        // Optional complex deck outline (polygon) for JSON decks.
+        parseDeckOutline(deckEntry);
+        if (deckOutline) {
+          const xs = deckOutline.map((p) => p.x);
+          const ys = deckOutline.map((p) => p.y);
+          deckMinX = Math.min(...xs);
+          deckMaxX = Math.max(...xs);
+          deckMinY = Math.min(...ys);
+          deckMaxY = Math.max(...ys);
+          deck_length = deckMaxX - deckMinX;
+          deck_width  = deckMaxY - deckMinY;
+          deckCenterX = (deckMinX + deckMaxX) / 2;
+          deckCenterY = (deckMinY + deckMaxY) / 2;
+        } else {
+          deckOutline = null;
+          deckMinX = Number(deckEntry.attributes.min_x ?? deckEntry.attributes.minX ?? -deck_length / 2);
+          deckMaxX = Number(deckEntry.attributes.max_x ?? deckEntry.attributes.maxX ??  deck_length / 2);
+          deckMinY = Number(deckEntry.attributes.min_y ?? deckEntry.attributes.minY ?? -deck_width / 2);
+          deckMaxY = Number(deckEntry.attributes.max_y ?? deckEntry.attributes.maxY ??  deck_width / 2);
+          deckCenterX = (deckMinX + deckMaxX) / 2;
+          deckCenterY = (deckMinY + deckMaxY) / 2;
+        }
         // 4) Interface definitions (if any):
         const ifaceDefs = deckArrangement.arrangements.interfaces;
         if (ifaceDefs && Object.keys(ifaceDefs).length > 0) {
@@ -140,13 +197,37 @@ function disposeMeshes(meshes) {
 }
 
 function createDeck() {
-    deck = new THREE.Mesh(
-        new THREE.BoxGeometry(deck_length, deck_width, 0.02),
-        new THREE.MeshBasicMaterial({ color: 'lightblue' })
-    );
-    deck.position.z = 0;
-    deckBB = new THREE.Box3().setFromObject(deck);
-    scene.add(deck);
+    // For JSON-uploaded decks, draw the provided polygon outline; fallback to box for other modes.
+    if (deck_configuration === 'json' && deckOutline && deckOutline.length >= 3) {
+        const shape = new THREE.Shape();
+        const first = deckOutline[0];
+        shape.moveTo(first.x - deckCenterX, first.y - deckCenterY);
+        for (let i = 1; i < deckOutline.length; i++) {
+            const pt = deckOutline[i];
+            shape.lineTo(pt.x - deckCenterX, pt.y - deckCenterY);
+        }
+        shape.closePath();
+
+        const geometry = new THREE.ExtrudeGeometry(shape, {
+            depth: 0.02,
+            bevelEnabled: false
+        });
+        deck = new THREE.Mesh(
+            geometry,
+            new THREE.MeshBasicMaterial({ color: 'lightblue' })
+        );
+        deck.position.z = 0;
+        deckBB = new THREE.Box3().setFromObject(deck);
+        scene.add(deck);
+    } else {
+        deck = new THREE.Mesh(
+            new THREE.BoxGeometry(deck_length, deck_width, 0.02),
+            new THREE.MeshBasicMaterial({ color: 'lightblue' })
+        );
+        deck.position.z = 0;
+        deckBB = new THREE.Box3().setFromObject(deck);
+        scene.add(deck);
+    }
 }
 
 function getCompartmentConfiguration(config) {
@@ -176,8 +257,8 @@ function getCompartmentConfiguration(config) {
                      .filter(k => k !== 'MusteringStation');
   
     return {
-      comp_x:      keys.map(k => Number(comps[k].attributes.x)),
-      comp_y:      keys.map(k => Number(comps[k].attributes.y)),
+      comp_x:      keys.map(k => Number(comps[k].attributes.x) - deckCenterX),
+      comp_y:      keys.map(k => Number(comps[k].attributes.y) - deckCenterY),
       compy_angle: keys.map(k => Number(comps[k].attributes.rotation) || 0),
       comp_length: keys.map(k => Number(comps[k].attributes.length)),
       comp_width:  keys.map(k => Number(comps[k].attributes.width)),
@@ -223,13 +304,15 @@ function createCompartments() {
 }
 
 function addMusteringStation() {
+    const centerX = deck_configuration === 'json' ? deckCenterX : deck_length / 2;
+    const centerY = deck_configuration === 'json' ? deckCenterY : deck_width / 2;
     mustering = new THREE.Mesh(
         new THREE.BoxGeometry(mes_length, mes_width, 2.5),
         new THREE.MeshBasicMaterial({ color: 'red', opacity: 0.5, transparent: true })
     );
     mustering.position.set(
-        mes_x_global - deck_length/2,
-        mes_y_global - deck_width/2,
+        mes_x_global - centerX,
+        mes_y_global - centerY,
         0
       );
 
@@ -251,6 +334,8 @@ function createInterfaces() {
     // first, remove any old interface meshes
     disposeMeshes(interfaceMeshes);
     interfaceMeshes = [];
+    const centerX = deck_configuration === 'json' ? deckCenterX : deck_length / 2;
+    const centerY = deck_configuration === 'json' ? deckCenterY : deck_width / 2;
   
     customInterfaces.forEach(iface => {
       const { x, y, z, width, height, thickness = 0.1, type } = iface;
@@ -263,8 +348,8 @@ function createInterfaces() {
       const mesh = new THREE.Mesh(geom, mat);
       // JSON coords are absolute; shift so deck is centered at (0,0)
       mesh.position.set(
-        x - deck_length/2,
-        y - deck_width/2,
+        x - centerX,
+        y - centerY,
         z + thickness/2
       );
       scene.add(mesh);
@@ -419,6 +504,24 @@ function isPositionInMusteringStation(position) {
     return expandedBB.containsPoint(position);
 }
 
+// Determine if a point lies within the current deck (polygon-aware for JSON uploads).
+function isPointInsideDeck(position) {
+    if (deck_configuration === 'json' && deckOutline && deckOutline.length >= 3) {
+        const px = position.x + deckCenterX;
+        const py = position.y + deckCenterY;
+        let inside = false;
+        for (let i = 0, j = deckOutline.length - 1; i < deckOutline.length; j = i++) {
+            const xi = deckOutline[i].x, yi = deckOutline[i].y;
+            const xj = deckOutline[j].x, yj = deckOutline[j].y;
+            const intersect = ((yi > py) !== (yj > py)) &&
+                (px < (xj - xi) * (py - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    }
+    return deckBB ? deckBB.containsPoint(position) : false;
+}
+
 function createPersons(num) {
     num = Number(num);  // Ensure num is a number.
     const person_colors = [
@@ -474,6 +577,7 @@ function createPersons(num) {
               break;
             }
           } while (
+            !isPointInsideDeck(candidate) ||
             isPositionInsideAnyCompartment(candidate) ||
             isPositionInMusteringStation(candidate)
           );
@@ -498,6 +602,9 @@ function createPersons(num) {
                 const idx = compartmentsMeshes.findIndex(m => m.name === name);
                 return idx >= 0 && compartmentsBB[idx].containsPoint(candidate);
               })
+              ||
+              // 3) must also sit on the deck outline
+              !isPointInsideDeck(candidate)
             );
           } else {
             // ► JSON without interfaces (or Persons 1+) fall back to “deck only”
@@ -509,6 +616,7 @@ function createPersons(num) {
                 break;
               }
             } while (
+              !isPointInsideDeck(candidate) ||
               isPositionInsideAnyCompartment(candidate) ||
               isPositionInMusteringStation(candidate)
             );
@@ -520,6 +628,7 @@ function createPersons(num) {
             attempts++;
             if (attempts > 1000) { break; }
           } while (
+            !isPointInsideDeck(candidate) ||
             isPositionInsideAnyCompartment(candidate) ||
             isPositionInMusteringStation(candidate)
           );
@@ -550,7 +659,7 @@ function directMovement(person,i) {
         return bb.intersectsBox(newBB);
     });
 
-    if (!collision && deckBB.containsPoint(newPos)) {
+    if (!collision && isPointInsideDeck(newPos)) {
         person.geometry.position.copy(newPos);
         person.BB.setFromObject(person.geometry);
         // Update accumulated distance:
@@ -563,7 +672,7 @@ function directMovement(person,i) {
         const verticalMove = person.movingUp ? move : -move;
         const testPos = person.geometry.position.clone().add(new THREE.Vector3(0, verticalMove, 0));
         const testBB = new THREE.Box3().setFromObject(person.geometry).translate(new THREE.Vector3(0, verticalMove, 0));
-        if (!compartmentsBB.some((bb) => bb.intersectsBox(testBB)) && deckBB.containsPoint(testPos)) {
+        if (!compartmentsBB.some((bb) => bb.intersectsBox(testBB)) && isPointInsideDeck(testPos)) {
             person.geometry.position.copy(testPos);
         } else {
             person.stuckCount++;
@@ -608,8 +717,8 @@ function interfaceAwareMovement(person, i) {
     }
   
     // 3) Compute the door’s position (JSON coords are deck-centered)
-    const targetX = iface.x - deck_length/2;
-    const targetY = iface.y - deck_width/2;
+    const targetX = iface.x - (deck_configuration === 'json' ? deckCenterX : deck_length/2);
+    const targetY = iface.y - (deck_configuration === 'json' ? deckCenterY : deck_width/2);
     // if we’re close enough to the door, switch to mustering logic
     const distToDoor = person.geometry.position.distanceTo(
       new THREE.Vector3(targetX, targetY, person.geometry.position.z)
