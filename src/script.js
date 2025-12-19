@@ -893,14 +893,9 @@ document.querySelectorAll('input[name="options"]').forEach((radio) => {
         document.getElementById("startSim").disabled = false;
         document.getElementById("plotFigure").disabled = true;
         document.getElementById("saveResultCSV").disabled = true;
-        document.getElementById("saveResultJSON").disabled
+        document.getElementById("saveResultJSON").disabled = true;
     });
 });
-
-
-
-init();
-
 $("#no_persons").on("change", function() {
     // keep our JS var in sync
     no_persons = Number(this.value) || 0;
@@ -924,39 +919,168 @@ $("#no_persons").on("change", function() {
     // Make sure the graph container is visible.
     document.getElementById("movment2D").style.display = "block";
 
-    // Prepare the data for all persons.
-    let TESTER = document.getElementById('movment2D');
-    var data = [];
+    const isJson = (deck_configuration === 'json');
+    const xShift = isJson ? 0 : (deck_length / 2);   // persons.x for non-JSON is stored as x_local + deck_length/2
+    const yShift = 0;
+
+    function rectCorners2D(cx, cy, L, W, rotRad) {
+        const hx = L / 2;
+        const hy = W / 2;
+        const pts = [
+            { x: -hx, y: -hy },
+            { x:  hx, y: -hy },
+            { x:  hx, y:  hy },
+            { x: -hx, y:  hy }
+        ];
+        const c = Math.cos(rotRad);
+        const s = Math.sin(rotRad);
+        const xs = [];
+        const ys = [];
+        for (const p of pts) {
+            const xr = p.x * c - p.y * s;
+            const yr = p.x * s + p.y * c;
+            xs.push(cx + xr);
+            ys.push(cy + yr);
+        }
+        // close polygon
+        xs.push(xs[0]);
+        ys.push(ys[0]);
+        return { xs, ys };
+    }
+
+    function buildDeckOutlineTrace() {
+        let xs = [];
+        let ys = [];
+
+        if (isJson && Array.isArray(deckOutline) && deckOutline.length >= 3) {
+            xs = deckOutline.map(p => Number(p.x));
+            ys = deckOutline.map(p => Number(p.y));
+            // If the outline is already closed (last point == first), drop the last point to avoid a double-close in the plot
+            if (xs.length >= 2 && xs[0] === xs[xs.length - 1] && ys[0] === ys[ys.length - 1]) {
+                xs = xs.slice(0, -1);
+                ys = ys.slice(0, -1);
+            }
+        } else {
+            // local (centered) rectangle, then apply xShift to match stored person.x
+            xs = [-deck_length/2,  deck_length/2,  deck_length/2, -deck_length/2];
+            ys = [-deck_width /2, -deck_width /2,  deck_width /2,  deck_width /2];
+        }
+
+        // close
+        xs = xs.concat(xs[0]);
+        ys = ys.concat(ys[0]);
+
+        // apply plot shift for non-JSON decks
+        xs = xs.map(v => v + xShift);
+        ys = ys.map(v => v + yShift);
+
+        return {
+            x: xs,
+            y: ys,
+            mode: 'lines',
+            name: 'Deck outline',
+            showlegend: false,
+            line: { width: 2 }
+        };
+    }
+
+    function buildRoomTraces() {
+        const traces = [];
+        if (!Array.isArray(compartmentsMeshes) || compartmentsMeshes.length === 0) return traces;
+
+        compartmentsMeshes.forEach((mesh, idx) => {
+            if (!mesh || !mesh.geometry || !mesh.position) return;
+            const params = mesh.geometry.parameters || {};
+            const L = Number(params.width);
+            const W = Number(params.height);
+            if (!Number.isFinite(L) || !Number.isFinite(W)) return;
+
+            const cx = Number(mesh.position.x);
+            const cy = Number(mesh.position.y);
+            const rot = Number(mesh.rotation?.z || 0);
+
+            const { xs, ys } = rectCorners2D(cx, cy, L, W, rot);
+
+            traces.push({
+                x: xs.map(v => v + xShift),
+                y: ys.map(v => v + yShift),
+                mode: 'lines',
+                name: mesh.name ? `Room: ${mesh.name}` : `Room ${idx + 1}`,
+                showlegend: false,
+                line: { width: 1 },
+                fill: 'toself',
+                fillcolor: 'rgba(0, 0, 255, 0.10)'
+            });
+        });
+
+        return traces;
+    }
+
+    function buildMusteringTrace() {
+        if (!mustering_inner || !mustering_inner.geometry || !mustering_inner.position) return null;
+        const params = mustering_inner.geometry.parameters || {};
+        const L = Number(params.width);
+        const W = Number(params.height);
+        if (!Number.isFinite(L) || !Number.isFinite(W)) return null;
+
+        const cx = Number(mustering_inner.position.x);
+        const cy = Number(mustering_inner.position.y);
+        const rot = Number(mustering_inner.rotation?.z || 0);
+
+        const { xs, ys } = rectCorners2D(cx, cy, L, W, rot);
+
+        return {
+            x: xs.map(v => v + xShift),
+            y: ys.map(v => v + yShift),
+            mode: 'lines',
+            name: 'Mustering station',
+            showlegend: false,
+            line: { width: 2 },
+            fill: 'toself',
+            fillcolor: 'rgba(255, 0, 0, 0.10)'
+        };
+    }
+
+    // Assemble traces: deck + rooms + mustering + persons
+    const data = [];
+    data.push(buildDeckOutlineTrace());
+    data.push(...buildRoomTraces());
+    const msTrace = buildMusteringTrace();
+    if (msTrace) data.push(msTrace);
+
     for (let i = 0; i < no_persons; i++) {
+        if (!persons[i] || !Array.isArray(persons[i].x)) continue;
         data.push({
             x: persons[i].x,
             y: persons[i].y,
             mode: 'lines',
-            lines: { width: 4 },
+            line: { width: 4 },   // <-- Plotly uses "line", not "lines"
             name: 'person ' + String(i + 1)
         });
     }
 
-    // Create the plot.
-    var layout = {
-    title: 'Movement Paths',
-    xaxis: { title: 'X position' },
-    yaxis: { title: 'Y position' },
-    width: 1750,   // higher width
-    height: 700,  // higher height
-};
+    const layout = {
+        title: 'Movement Paths',
+        xaxis: { title: 'X position', zeroline: false },
+        yaxis: { title: 'Y position', zeroline: false, scaleanchor: 'x', scaleratio: 1 },
+        width: 1750,
+        height: 700,
+        margin: { l: 70, r: 20, t: 60, b: 60 }
+    };
 
-var config = {
-    responsive: true,
-    displaylogo: false,
-    toImageButtonOptions: {
-        format: 'png',
-        filename: 'high_res_plot',
-        height: 1400,  // set higher for better DPI
-        width: 3500,
-        scale: 4       // scale multiplies width/height and improves DPI
-    }
-};
+    const config = {
+        responsive: true,
+        displaylogo: false,
+        toImageButtonOptions: {
+            format: 'png',
+            filename: 'high_res_plot',
+            height: 1400,
+            width: 3500,
+            scale: 4
+        }
+    };
+
+        const TESTER = document.getElementById('movment2D');
 
     Plotly.newPlot(TESTER, data, layout, config);
 });
