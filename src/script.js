@@ -915,46 +915,176 @@ $("#no_persons").on("change", function() {
     resetScene();
   });
 
-  $("#plotFigure").on("click", function() {
-    // Make sure the graph container is visible.
-    document.getElementById("movment2D").style.display = "block";
+$("#plotFigure").on("click", function() {
+  // Make sure the graph container is visible.
+  document.getElementById("movment2D").style.display = "block";
 
-    // Prepare the data for all persons.
-    let TESTER = document.getElementById('movment2D');
-    var data = [];
-    for (let i = 0; i < no_persons; i++) {
-        data.push({
-            x: persons[i].x,
-            y: persons[i].y,
-            mode: 'lines',
-            lines: { width: 4 },
-            name: 'person ' + String(i + 1)
-        });
+  // --- Helper: build Plotly overlay traces for deck outline + rooms (compartments) ---
+  // Plot coordinates follow the same convention used when recording person paths:
+  //   x_plot = localX + deck_length/2
+  //   y_plot = localY
+  // For JSON outlines (absolute coords), this becomes:
+  //   x_plot = absX - deckMinX
+  //   y_plot = absY - deckCenterY
+  function buildDeckOutlineTrace() {
+    let xs = [];
+    let ys = [];
+
+    if (deck_configuration === 'json' && Array.isArray(deckOutline) && deckOutline.length >= 3) {
+      xs = deckOutline.map(p => (Number(p.x) - deckMinX));
+      ys = deckOutline.map(p => (Number(p.y) - deckCenterY));
+    } else {
+      // Rectangle deck in plot coordinates
+      xs = [0, deck_length, deck_length, 0];
+      ys = [-deck_width / 2, -deck_width / 2, deck_width / 2, deck_width / 2];
     }
 
-    // Create the plot.
-    var layout = {
-    title: 'Movement Paths',
-    xaxis: { title: 'X position' },
-    yaxis: { title: 'Y position' },
-    width: 1750,   // higher width
-    height: 700,  // higher height
-};
+    // close polygon
+    xs = xs.concat(xs[0]);
+    ys = ys.concat(ys[0]);
 
-var config = {
+    return {
+      x: xs,
+      y: ys,
+      mode: 'lines',
+      name: 'Deck outline',
+      showlegend: false,
+      line: { width: 2 }
+    };
+  }
+
+  function rectangleCorners2D(cx, cy, L, W, rotRad) {
+    // returns closed polygon arrays in local coordinates
+    const hx = L / 2;
+    const hy = W / 2;
+    const pts = [
+      { x: -hx, y: -hy },
+      { x:  hx, y: -hy },
+      { x:  hx, y:  hy },
+      { x: -hx, y:  hy }
+    ];
+    const c = Math.cos(rotRad);
+    const s = Math.sin(rotRad);
+    const xs = [];
+    const ys = [];
+    for (const p of pts) {
+      const xr = p.x * c - p.y * s;
+      const yr = p.x * s + p.y * c;
+      xs.push(cx + xr);
+      ys.push(cy + yr);
+    }
+    // close
+    xs.push(xs[0]);
+    ys.push(ys[0]);
+    return { xs, ys };
+  }
+
+  function buildRoomTraces() {
+    const traces = [];
+    if (!Array.isArray(compartmentsMeshes) || compartmentsMeshes.length === 0) return traces;
+
+    compartmentsMeshes.forEach((mesh, idx) => {
+      if (!mesh || !mesh.geometry || !mesh.position) return;
+      const params = mesh.geometry.parameters || {};
+      // BoxGeometry(width, height, depth) but we used (length, width, height)
+      const L = Number(params.width);
+      const W = Number(params.height);
+      if (!Number.isFinite(L) || !Number.isFinite(W)) return;
+
+      const cxLocal = Number(mesh.position.x);
+      const cyLocal = Number(mesh.position.y);
+      const rot = Number(mesh.rotation?.z || 0);
+      const { xs, ys } = rectangleCorners2D(cxLocal, cyLocal, L, W, rot);
+
+      // convert to plot coordinates (same x-shift as person.x recording)
+      const xPlot = xs.map(v => v + deck_length / 2);
+      const yPlot = ys;
+
+      traces.push({
+        x: xPlot,
+        y: yPlot,
+        mode: 'lines',
+        name: mesh.name ? `Room: ${mesh.name}` : `Room ${idx + 1}`,
+        showlegend: false,
+        line: { width: 1 },
+        fill: 'toself',
+        fillcolor: 'rgba(255, 215, 0, 0.18)'
+      });
+    });
+
+    return traces;
+  }
+
+  // optional (helps validate reachability)
+  function buildMusteringTrace() {
+    if (!mustering_inner || !mustering_inner.geometry || !mustering_inner.position) return null;
+    const params = mustering_inner.geometry.parameters || {};
+    const L = Number(params.width);
+    const W = Number(params.height);
+    if (!Number.isFinite(L) || !Number.isFinite(W)) return null;
+
+    const cxLocal = Number(mustering_inner.position.x);
+    const cyLocal = Number(mustering_inner.position.y);
+    const rot = Number(mustering_inner.rotation?.z || 0);
+    const { xs, ys } = rectangleCorners2D(cxLocal, cyLocal, L, W, rot);
+
+    return {
+      x: xs.map(v => v + deck_length / 2),
+      y: ys,
+      mode: 'lines',
+      name: 'Mustering station',
+      showlegend: false,
+      line: { width: 2 },
+      fill: 'toself',
+      fillcolor: 'rgba(255, 0, 0, 0.10)'
+    };
+  }
+
+  // Prepare the data for deck + rooms + all persons.
+  let TESTER = document.getElementById('movment2D');
+  const data = [];
+
+  // Add deck outline and rooms first (so paths are drawn on top)
+  data.push(buildDeckOutlineTrace());
+  data.push(...buildRoomTraces());
+  const msTrace = buildMusteringTrace();
+  if (msTrace) data.push(msTrace);
+
+  // Add movement paths
+  for (let i = 0; i < no_persons; i++) {
+    data.push({
+      x: persons[i].x,
+      y: persons[i].y,
+      mode: 'lines',
+      line: { width: 4 },
+      name: 'person ' + String(i + 1)
+    });
+  }
+
+  const layout = {
+    title: 'Movement Paths',
+    xaxis: { title: 'X position', zeroline: false },
+    yaxis: { title: 'Y position', zeroline: false, scaleanchor: 'x', scaleratio: 1 },
+    width: 1750,
+    height: 700,
+    margin: { l: 70, r: 20, t: 60, b: 60 }
+  };
+
+  const config = {
     responsive: true,
     displaylogo: false,
     toImageButtonOptions: {
-        format: 'png',
-        filename: 'high_res_plot',
-        height: 1400,  // set higher for better DPI
-        width: 3500,
-        scale: 4       // scale multiplies width/height and improves DPI
+      format: 'png',
+      filename: 'high_res_plot',
+      height: 1400,
+      width: 3500,
+      scale: 4
     }
-};
+  };
 
-    Plotly.newPlot(TESTER, data, layout, config);
+  Plotly.newPlot(TESTER, data, layout, config);
 });
+
 
 $("#saveResultCSV").on("click", function() {
   for (let i = 0; i < no_persons; i++) {
