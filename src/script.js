@@ -119,16 +119,16 @@ function initializeConfiguration() {
           deckMaxY = Math.max(...ys);
           deck_length = deckMaxX - deckMinX;
           deck_width  = deckMaxY - deckMinY;
-          deckCenterX = (deckMinX + deckMaxX) / 2;
-          deckCenterY = (deckMinY + deckMaxY) / 2;
+          deckCenterX = 0;
+          deckCenterY = 0;
         } else {
           deckOutline = null;
           deckMinX = Number(deckEntry.attributes.min_x ?? deckEntry.attributes.minX ?? -deck_length / 2);
           deckMaxX = Number(deckEntry.attributes.max_x ?? deckEntry.attributes.maxX ??  deck_length / 2);
           deckMinY = Number(deckEntry.attributes.min_y ?? deckEntry.attributes.minY ?? -deck_width / 2);
           deckMaxY = Number(deckEntry.attributes.max_y ?? deckEntry.attributes.maxY ??  deck_width / 2);
-          deckCenterX = (deckMinX + deckMaxX) / 2;
-          deckCenterY = (deckMinY + deckMaxY) / 2;
+          deckCenterX = 0;
+          deckCenterY = 0;
         }
         // 4) Interface definitions (if any):
         const ifaceDefs = deckArrangement.arrangements.interfaces;
@@ -164,7 +164,11 @@ function adjustCameraPosition() {
     // Compute the ideal distance so the deck exactly fills the view:
     const requiredZ = (maxDeckSize / 2) / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
     // Increase the distance so the deck occupies only about 60% of the view:
+    const deckCenter = deckBB ? deckBB.getCenter(new THREE.Vector3()) : new THREE.Vector3(0, 0, 0);
+    camera.position.x = deckCenter.x;
+    camera.position.y = deckCenter.y;
     camera.position.z = requiredZ / 1.7;
+    if (orbitControls) orbitControls.target.copy(deckCenter);
     camera.updateProjectionMatrix();
 }
 
@@ -201,10 +205,10 @@ function createDeck() {
     if (deck_configuration === 'json' && deckOutline && deckOutline.length >= 3) {
         const shape = new THREE.Shape();
         const first = deckOutline[0];
-        shape.moveTo(first.x - deckCenterX, first.y - deckCenterY);
+        shape.moveTo(first.x, first.y);
         for (let i = 1; i < deckOutline.length; i++) {
             const pt = deckOutline[i];
-            shape.lineTo(pt.x - deckCenterX, pt.y - deckCenterY);
+            shape.lineTo(pt.x, pt.y);
         }
         shape.closePath();
 
@@ -257,8 +261,8 @@ function getCompartmentConfiguration(config) {
                      .filter(k => k !== 'MusteringStation');
   
     return {
-      comp_x:      keys.map(k => Number(comps[k].attributes.x) - deckCenterX),
-      comp_y:      keys.map(k => Number(comps[k].attributes.y) - deckCenterY),
+      comp_x:      keys.map(k => Number(comps[k].attributes.x)),
+      comp_y:      keys.map(k => Number(comps[k].attributes.y)),
       compy_angle: keys.map(k => Number(comps[k].attributes.rotation) || 0),
       comp_length: keys.map(k => Number(comps[k].attributes.length)),
       comp_width:  keys.map(k => Number(comps[k].attributes.width)),
@@ -304,15 +308,15 @@ function createCompartments() {
 }
 
 function addMusteringStation() {
-    const centerX = deck_configuration === 'json' ? deckCenterX : deck_length / 2;
-    const centerY = deck_configuration === 'json' ? deckCenterY : deck_width / 2;
+    const offsetX = deck_configuration === 'json' ? 0 : deck_length / 2;
+    const offsetY = deck_configuration === 'json' ? 0 : deck_width / 2;
     mustering = new THREE.Mesh(
         new THREE.BoxGeometry(mes_length, mes_width, 2.5),
         new THREE.MeshBasicMaterial({ color: 'red', opacity: 0.5, transparent: true })
     );
     mustering.position.set(
-        mes_x_global - centerX,
-        mes_y_global - centerY,
+        mes_x_global - offsetX,
+        mes_y_global - offsetY,
         0
       );
 
@@ -334,8 +338,8 @@ function createInterfaces() {
     // first, remove any old interface meshes
     disposeMeshes(interfaceMeshes);
     interfaceMeshes = [];
-    const centerX = deck_configuration === 'json' ? deckCenterX : deck_length / 2;
-    const centerY = deck_configuration === 'json' ? deckCenterY : deck_width / 2;
+    const offsetX = deck_configuration === 'json' ? 0 : deck_length / 2;
+    const offsetY = deck_configuration === 'json' ? 0 : deck_width / 2;
   
     customInterfaces.forEach(iface => {
       const { x, y, z, width, height, thickness = 0.1, type } = iface;
@@ -348,8 +352,8 @@ function createInterfaces() {
       const mesh = new THREE.Mesh(geom, mat);
       // JSON coords are absolute; shift so deck is centered at (0,0)
       mesh.position.set(
-        x - centerX,
-        y - centerY,
+        x - offsetX,
+        y - offsetY,
         z + thickness/2
       );
       scene.add(mesh);
@@ -386,7 +390,8 @@ function setupOrbitControls() {
   orbitControls = new OrbitControls(camera, renderer.domElement);
   orbitControls.enableDamping = true;
   orbitControls.dampingFactor = 0.1;
-  orbitControls.target.set(0, 0, 0);
+  const tgt = deckBB ? deckBB.getCenter(new THREE.Vector3()) : new THREE.Vector3(0, 0, 0);
+  orbitControls.target.copy(tgt);
   // Default mode: rotation enabled.
   orbitControls.enabled = true;
   return orbitControls;
@@ -507,8 +512,8 @@ function isPositionInMusteringStation(position) {
 // Determine if a point lies within the current deck (polygon-aware for JSON uploads).
 function isPointInsideDeck(position) {
     if (deck_configuration === 'json' && deckOutline && deckOutline.length >= 3) {
-        const px = position.x + deckCenterX;
-        const py = position.y + deckCenterY;
+        const px = position.x;
+        const py = position.y;
         let inside = false;
         for (let i = 0, j = deckOutline.length - 1; i < deckOutline.length; j = i++) {
             const xi = deckOutline[i].x, yi = deckOutline[i].y;
@@ -684,7 +689,7 @@ function directMovement(person,i) {
     }
 
     // Record the new position and time:
-    person.x.push(person.geometry.position.x + deck_length / 2);
+    person.x.push(deck_configuration === 'json' ? person.geometry.position.x : (person.geometry.position.x + deck_length / 2));
     person.y.push(person.geometry.position.y);
     person.time.push(time_step);
     person.BB.setFromObject(person.geometry);
@@ -717,8 +722,8 @@ function interfaceAwareMovement(person, i) {
     }
   
     // 3) Compute the door’s position (JSON coords are deck-centered)
-    const targetX = iface.x - (deck_configuration === 'json' ? deckCenterX : deck_length/2);
-    const targetY = iface.y - (deck_configuration === 'json' ? deckCenterY : deck_width/2);
+    const targetX = deck_configuration === 'json' ? iface.x : (iface.x - deck_length/2);
+    const targetY = deck_configuration === 'json' ? iface.y : (iface.y - deck_width/2);
     // if we’re close enough to the door, switch to mustering logic
     const distToDoor = person.geometry.position.distanceTo(
       new THREE.Vector3(targetX, targetY, person.geometry.position.z)
@@ -915,176 +920,46 @@ $("#no_persons").on("change", function() {
     resetScene();
   });
 
-$("#plotFigure").on("click", function() {
-  // Make sure the graph container is visible.
-  document.getElementById("movment2D").style.display = "block";
+  $("#plotFigure").on("click", function() {
+    // Make sure the graph container is visible.
+    document.getElementById("movment2D").style.display = "block";
 
-  // --- Helper: build Plotly overlay traces for deck outline + rooms (compartments) ---
-  // Plot coordinates follow the same convention used when recording person paths:
-  //   x_plot = localX + deck_length/2
-  //   y_plot = localY
-  // For JSON outlines (absolute coords), this becomes:
-  //   x_plot = absX - deckMinX
-  //   y_plot = absY - deckCenterY
-  function buildDeckOutlineTrace() {
-    let xs = [];
-    let ys = [];
-
-    if (deck_configuration === 'json' && Array.isArray(deckOutline) && deckOutline.length >= 3) {
-      xs = deckOutline.map(p => (Number(p.x) - deckMinX));
-      ys = deckOutline.map(p => (Number(p.y) - deckCenterY));
-    } else {
-      // Rectangle deck in plot coordinates
-      xs = [0, deck_length, deck_length, 0];
-      ys = [-deck_width / 2, -deck_width / 2, deck_width / 2, deck_width / 2];
+    // Prepare the data for all persons.
+    let TESTER = document.getElementById('movment2D');
+    var data = [];
+    for (let i = 0; i < no_persons; i++) {
+        data.push({
+            x: persons[i].x,
+            y: persons[i].y,
+            mode: 'lines',
+            lines: { width: 4 },
+            name: 'person ' + String(i + 1)
+        });
     }
 
-    // close polygon
-    xs = xs.concat(xs[0]);
-    ys = ys.concat(ys[0]);
-
-    return {
-      x: xs,
-      y: ys,
-      mode: 'lines',
-      name: 'Deck outline',
-      showlegend: false,
-      line: { width: 2 }
-    };
-  }
-
-  function rectangleCorners2D(cx, cy, L, W, rotRad) {
-    // returns closed polygon arrays in local coordinates
-    const hx = L / 2;
-    const hy = W / 2;
-    const pts = [
-      { x: -hx, y: -hy },
-      { x:  hx, y: -hy },
-      { x:  hx, y:  hy },
-      { x: -hx, y:  hy }
-    ];
-    const c = Math.cos(rotRad);
-    const s = Math.sin(rotRad);
-    const xs = [];
-    const ys = [];
-    for (const p of pts) {
-      const xr = p.x * c - p.y * s;
-      const yr = p.x * s + p.y * c;
-      xs.push(cx + xr);
-      ys.push(cy + yr);
-    }
-    // close
-    xs.push(xs[0]);
-    ys.push(ys[0]);
-    return { xs, ys };
-  }
-
-  function buildRoomTraces() {
-    const traces = [];
-    if (!Array.isArray(compartmentsMeshes) || compartmentsMeshes.length === 0) return traces;
-
-    compartmentsMeshes.forEach((mesh, idx) => {
-      if (!mesh || !mesh.geometry || !mesh.position) return;
-      const params = mesh.geometry.parameters || {};
-      // BoxGeometry(width, height, depth) but we used (length, width, height)
-      const L = Number(params.width);
-      const W = Number(params.height);
-      if (!Number.isFinite(L) || !Number.isFinite(W)) return;
-
-      const cxLocal = Number(mesh.position.x);
-      const cyLocal = Number(mesh.position.y);
-      const rot = Number(mesh.rotation?.z || 0);
-      const { xs, ys } = rectangleCorners2D(cxLocal, cyLocal, L, W, rot);
-
-      // convert to plot coordinates (same x-shift as person.x recording)
-      const xPlot = xs.map(v => v + deck_length / 2);
-      const yPlot = ys;
-
-      traces.push({
-        x: xPlot,
-        y: yPlot,
-        mode: 'lines',
-        name: mesh.name ? `Room: ${mesh.name}` : `Room ${idx + 1}`,
-        showlegend: false,
-        line: { width: 1 },
-        fill: 'toself',
-        fillcolor: 'rgba(255, 215, 0, 0.18)'
-      });
-    });
-
-    return traces;
-  }
-
-  // optional (helps validate reachability)
-  function buildMusteringTrace() {
-    if (!mustering_inner || !mustering_inner.geometry || !mustering_inner.position) return null;
-    const params = mustering_inner.geometry.parameters || {};
-    const L = Number(params.width);
-    const W = Number(params.height);
-    if (!Number.isFinite(L) || !Number.isFinite(W)) return null;
-
-    const cxLocal = Number(mustering_inner.position.x);
-    const cyLocal = Number(mustering_inner.position.y);
-    const rot = Number(mustering_inner.rotation?.z || 0);
-    const { xs, ys } = rectangleCorners2D(cxLocal, cyLocal, L, W, rot);
-
-    return {
-      x: xs.map(v => v + deck_length / 2),
-      y: ys,
-      mode: 'lines',
-      name: 'Mustering station',
-      showlegend: false,
-      line: { width: 2 },
-      fill: 'toself',
-      fillcolor: 'rgba(255, 0, 0, 0.10)'
-    };
-  }
-
-  // Prepare the data for deck + rooms + all persons.
-  let TESTER = document.getElementById('movment2D');
-  const data = [];
-
-  // Add deck outline and rooms first (so paths are drawn on top)
-  data.push(buildDeckOutlineTrace());
-  data.push(...buildRoomTraces());
-  const msTrace = buildMusteringTrace();
-  if (msTrace) data.push(msTrace);
-
-  // Add movement paths
-  for (let i = 0; i < no_persons; i++) {
-    data.push({
-      x: persons[i].x,
-      y: persons[i].y,
-      mode: 'lines',
-      line: { width: 4 },
-      name: 'person ' + String(i + 1)
-    });
-  }
-
-  const layout = {
+    // Create the plot.
+    var layout = {
     title: 'Movement Paths',
-    xaxis: { title: 'X position', zeroline: false },
-    yaxis: { title: 'Y position', zeroline: false, scaleanchor: 'x', scaleratio: 1 },
-    width: 1750,
-    height: 700,
-    margin: { l: 70, r: 20, t: 60, b: 60 }
-  };
+    xaxis: { title: 'X position' },
+    yaxis: { title: 'Y position' },
+    width: 1750,   // higher width
+    height: 700,  // higher height
+};
 
-  const config = {
+var config = {
     responsive: true,
     displaylogo: false,
     toImageButtonOptions: {
-      format: 'png',
-      filename: 'high_res_plot',
-      height: 1400,
-      width: 3500,
-      scale: 4
+        format: 'png',
+        filename: 'high_res_plot',
+        height: 1400,  // set higher for better DPI
+        width: 3500,
+        scale: 4       // scale multiplies width/height and improves DPI
     }
-  };
+};
 
-  Plotly.newPlot(TESTER, data, layout, config);
+    Plotly.newPlot(TESTER, data, layout, config);
 });
-
 
 $("#saveResultCSV").on("click", function() {
   for (let i = 0; i < no_persons; i++) {
