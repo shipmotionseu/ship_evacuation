@@ -885,6 +885,7 @@ class Human {
         scene.add(this.geometry);
         this.hasReachedInterface = false;
         this.currentCompartmentIndex = null;     // directMovement can ignore the right room
+        this.targetMusteringStationIndex = 0;    // Index of the nearest mustering station
     }
 }
 
@@ -913,6 +914,27 @@ function isPositionInMusteringStation(position) {
     if (!musteringStationsBB || musteringStationsBB.length === 0) return false;
     const expandedBB = musteringStationsBB[0].clone().expandByScalar(1);
     return expandedBB.containsPoint(position);
+}
+
+// Find the index of the nearest mustering station to a given position
+function findNearestMusteringStation(position) {
+    if (!musteringStations_inner || musteringStations_inner.length === 0) return 0;
+    
+    let nearestIndex = 0;
+    let minDistance = Infinity;
+    
+    musteringStations_inner.forEach((station, index) => {
+        const dx = station.position.x - position.x;
+        const dy = station.position.y - position.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance < minDistance) {
+            minDistance = distance;
+            nearestIndex = index;
+        }
+    });
+    
+    return nearestIndex;
 }
 
 // Determine if a point lies within the current deck (polygon-aware for JSON uploads).
@@ -1045,15 +1067,19 @@ function createPersons(num) {
           );
         }
         human.geometry.position.copy(candidate);
+        // Assign the nearest mustering station to this person
+        human.targetMusteringStationIndex = findNearestMusteringStation(candidate);
+        console.log(`Person ${i} assigned to mustering station ${human.targetMusteringStationIndex}`);
         return human;
     });
 }
 
 function directMovement(person,i) {
-    // Always move toward the first mustering station (index 0)
+    // Move toward the person's assigned mustering station
     if (!musteringStations_inner || musteringStations_inner.length === 0) return;
-    const deltaX = musteringStations_inner[0].position.x - person.geometry.position.x;
-    const deltaY = musteringStations_inner[0].position.y - person.geometry.position.y;
+    const targetIndex = person.targetMusteringStationIndex || 0;
+    const deltaX = musteringStations_inner[targetIndex].position.x - person.geometry.position.x;
+    const deltaY = musteringStations_inner[targetIndex].position.y - person.geometry.position.y;
     const angle = Math.atan2(deltaY, deltaX);
     const move = deltaT * person.speed;
 
@@ -1102,8 +1128,8 @@ function directMovement(person,i) {
     person.time.push(time_step);
     person.BB.setFromObject(person.geometry);
     document.getElementById("movment" + String(i + 1)).innerText = person.dist.toFixed(2);
-    // Check if person has reached the first mustering station (index 0)
-    if (musteringStationsBB.length > 0 && musteringStationsBB[0].intersectsBox(person.BB)) {
+    // Check if person has reached their assigned mustering station
+    if (musteringStationsBB.length > targetIndex && musteringStationsBB[targetIndex].intersectsBox(person.BB)) {
         inMES[i] = 1;
     }
 }
@@ -1141,15 +1167,15 @@ function interfaceAwareMovement(person, i) {
       person.hasReachedInterface = true;   // NEW
       return;                              // leave the room this frame
     }
-    // 4) Temporarily steer the first mustering station to the door...
-    const oldPos = musteringStations_inner[0].position.clone();
-    musteringStations_inner[0].position.set(targetX, targetY, oldPos.z);
+    // 4) Temporarily steer the person's assigned mustering station to the door...
+    const oldPos = musteringStations_inner[person.targetMusteringStationIndex || 0].position.clone();
+    musteringStations_inner[person.targetMusteringStationIndex || 0].position.set(targetX, targetY, oldPos.z);
   
     // 5) Reuse your directMovement logic to navigate to the door
     directMovement(person, i);
   
     // 6) Restore the real mustering station
-    musteringStations_inner[0].position.copy(oldPos);
+    musteringStations_inner[person.targetMusteringStationIndex || 0].position.copy(oldPos);
   }
 
 
