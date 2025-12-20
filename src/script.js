@@ -5,6 +5,124 @@ import { DragControls } from 'three/addons/controls/DragControls.js';
 let no_compartments = 5;
 let no_persons = 2; // Initialize with the default value from your HTML input
 
+// ============================================================================
+// Polygon Bounding Box Class for Non-Rectangular Rooms
+// ============================================================================
+
+/**
+ * PolygonBoundingBox - A custom bounding structure for polygon-shaped compartments
+ * This replaces THREE.Box3 for irregular rooms to provide accurate bounds
+ */
+class PolygonBoundingBox {
+    constructor(outline) {
+        if (!Array.isArray(outline) || outline.length < 3) {
+            throw new Error('PolygonBoundingBox requires at least 3 points');
+        }
+        this.outline = outline.map(p => ({ x: Number(p.x), y: Number(p.y) }));
+        this.isPolygonBB = true;
+        
+        // Compute axis-aligned bounds for quick rejection tests
+        const xs = this.outline.map(p => p.x);
+        const ys = this.outline.map(p => p.y);
+        this.min = new THREE.Vector3(Math.min(...xs), Math.min(...ys), 0);
+        this.max = new THREE.Vector3(Math.max(...xs), Math.max(...ys), 0);
+    }
+    
+    /**
+     * Test if a point is contained within the polygon using ray casting
+     */
+    containsPoint(point) {
+        // Quick AABB rejection test first
+        if (point.x < this.min.x || point.x > this.max.x ||
+            point.y < this.min.y || point.y > this.max.y) {
+            return false;
+        }
+        // Detailed point-in-polygon test
+        return pointInPolygon2D(point.x, point.y, this.outline);
+    }
+    
+    /**
+     * Expand the polygon bounds by a scalar value
+     * Creates an offset polygon (simplified implementation)
+     */
+    expandByScalar(offset) {
+        if (offset === 0) return this;
+        
+        // Create a new polygon with expanded AABB bounds
+        // For a more accurate implementation, consider implementing polygon offsetting
+        const expandedOutline = this.outline.map(p => ({
+            x: p.x + (p.x >= 0 ? offset : -offset),
+            y: p.y + (p.y >= 0 ? offset : -offset)
+        }));
+        
+        return new PolygonBoundingBox(expandedOutline);
+    }
+    
+    /**
+     * Clone the polygon bounding box
+     */
+    clone() {
+        return new PolygonBoundingBox(this.outline);
+    }
+    
+    /**
+     * Check intersection with another bounding box (Box3 or PolygonBoundingBox)
+     */
+    intersectsBox(other) {
+        // Quick AABB test first
+        if (this.max.x < other.min.x || this.min.x > other.max.x ||
+            this.max.y < other.min.y || this.min.y > other.max.y) {
+            return false;
+        }
+        
+        // For detailed intersection, check if any vertex of one polygon is inside the other
+        if (other.isPolygonBB) {
+            // Check if any vertex of 'other' is inside 'this'
+            for (const pt of other.outline) {
+                if (this.containsPoint(new THREE.Vector3(pt.x, pt.y, 0))) {
+                    return true;
+                }
+            }
+            // Check if any vertex of 'this' is inside 'other'
+            for (const pt of this.outline) {
+                if (other.containsPoint(new THREE.Vector3(pt.x, pt.y, 0))) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        
+        // If 'other' is a Box3, check its corners against this polygon
+        const corners = [
+            new THREE.Vector3(other.min.x, other.min.y, 0),
+            new THREE.Vector3(other.max.x, other.min.y, 0),
+            new THREE.Vector3(other.max.x, other.max.y, 0),
+            new THREE.Vector3(other.min.x, other.max.y, 0)
+        ];
+        
+        return corners.some(corner => this.containsPoint(corner));
+    }
+    
+    /**
+     * Update the polygon outline (e.g., after dragging)
+     */
+    setFromOutline(outline) {
+        if (!Array.isArray(outline) || outline.length < 3) {
+            console.warn('Invalid outline for PolygonBoundingBox.setFromOutline');
+            return;
+        }
+        this.outline = outline.map(p => ({ x: Number(p.x), y: Number(p.y) }));
+        
+        // Update AABB
+        const xs = this.outline.map(p => p.x);
+        const ys = this.outline.map(p => p.y);
+        this.min.set(Math.min(...xs), Math.min(...ys), 0);
+        this.max.set(Math.max(...xs), Math.max(...ys), 0);
+    }
+}
+
+// ============================================================================
+
 let compartments = [], compartmentsBB = [], compartmentsMeshes = [];
 let animationId, scene, camera, renderer, deck, deckBB, mustering, mustering_inner, MusteringBB;
 let persons = [], inMES = [];
@@ -462,7 +580,13 @@ function createCompartments() {
             mesh.name = name;
             scene.add(mesh);
             compartmentsMeshes.push(mesh);
-            compartmentsBB.push(new THREE.Box3().setFromObject(mesh));
+            
+            // Use PolygonBoundingBox for polygon rooms, THREE.Box3 for rectangular rooms
+            if (outline && (shapeType === 'polygon' || shapeType === '')) {
+                compartmentsBB.push(new PolygonBoundingBox(outline));
+            } else {
+                compartmentsBB.push(new THREE.Box3().setFromObject(mesh));
+            }
         });
 
         return;
@@ -599,7 +723,17 @@ function setupDragControls() {
     });
     compDragControls.addEventListener('dragend', () => {
         compartmentsMeshes.forEach((mesh, i) => {
-            compartmentsBB[i].setFromObject(mesh);
+            const bb = compartmentsBB[i];
+            
+            if (bb && bb.isPolygonBB) {
+                // For polygon rooms, update the outline with the new position
+                const outline = getMeshOutlineGlobal(mesh);
+                if (outline) {
+                    bb.setFromOutline(outline);
+                }
+            } else if (bb) {
+                bb.setFromObject(mesh);
+            }
         });
         cancelAnimationFrame(animationId);
         disposePersons();
