@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { DragControls } from 'three/addons/controls/DragControls.js';
+import './layout_loader.js';
 
 let no_compartments = 5;
 let no_persons = 2; // Initialize with the default value from your HTML input
@@ -143,7 +144,6 @@ let deckOutline = null;         // optional outline when loaded from JSON
 let customInterfaces = [];      // holds parsed interface attributes
 let interfaceMeshes = [];       // mesh instances for cleanup
 let interfaceCompNames = new Set(); 
-let geometryLoadInProgress = false;
 
 // Normalize an outline array (supports [{x,y}] or [[x,y]]). Returns [{x,y}] without a duplicate closing point.
 function normalizeOutline(raw) {
@@ -235,30 +235,18 @@ function parseDeckOutline(deckEntry) {
     }
 }
 
-function loadGeometryFile(event) {
-    const file = event?.target?.files?.[0];
-    if (!file) return;
+// Layout is loaded from JSON in layout_loader.js; this file listens for the load event.
+window.addEventListener('shipEvacuation:geometryLoaded', (event) => {
+    const loaded = event?.detail?.deckArrangement;
+    if (!loaded) return;
+    deckArrangement = loaded;
+    deck_configuration = 'json';
+    // re-draw with new data
+    resetScene();
+    const r3 = document.getElementById('radio3');
+    if (r3) r3.checked = true;
+});
 
-    // Prevent double-trigger (e.g., inline onchange + addEventListener)
-    if (geometryLoadInProgress) return;
-    geometryLoadInProgress = true;
-
-    const reader = new FileReader();
-    reader.onload = e => {
-      try {
-        deckArrangement = JSON.parse(e.target.result);
-        deck_configuration = 'json';
-        // re-draw with new data
-        resetScene();
-        const r3 = document.getElementById('radio3');
-        if (r3) r3.checked = true;
-      } finally {
-        geometryLoadInProgress = false;
-      }
-    };
-    reader.onerror = () => { geometryLoadInProgress = false; };
-    reader.readAsText(file);
-  }
 
 function initializeConfiguration() {
     // Reset outline unless JSON redefines it.
@@ -1565,7 +1553,3 @@ $("#saveResultJSON").on("click", function() {
 
 });
 
-// Expose for the inline onchange handler in index.html
-if (typeof window !== 'undefined') {
-  window.loadGeometryFile = loadGeometryFile;
-}
