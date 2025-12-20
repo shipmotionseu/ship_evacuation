@@ -124,12 +124,14 @@ class PolygonBoundingBox {
 // ============================================================================
 
 let compartments = [], compartmentsBB = [], compartmentsMeshes = [];
-let animationId, scene, camera, renderer, deck, deckBB, mustering, mustering_inner, MusteringBB;
+let animationId, scene, camera, renderer, deck, deckBB;
+let musteringStations = [], musteringStations_inner = [], musteringStationsBB = [];
 let persons = [], inMES = [];
 let orbitControls, compDragControls, MESdragControls;
 
 let deck_configuration = "simple";
-let mes_x_global, mes_y_global, mes_width, mes_length, deck_length, deck_width;
+let musteringStationsData = []; // Array of {x, y, length, width, name} for all mustering stations
+let deck_length, deck_width;
 let deckMinX = 0, deckMaxX = 0, deckMinY = 0, deckMaxY = 0;
 let deckCenterX = 0, deckCenterY = 0;
 let deltaT = 0;
@@ -265,10 +267,14 @@ function initializeConfiguration() {
     deckMinX = 0; deckMaxX = 0; deckMinY = 0; deckMaxY = 0;
     if (deck_configuration === "simple") {
       no_compartments = 5;
-      mes_x_global  = 105;  
-      mes_y_global  = 17;
-      mes_length    = 5;
-      mes_width     = 10;
+      // Single mustering station for simple mode
+      musteringStationsData = [{
+        x: 105,
+        y: 17,
+        length: 5,
+        width: 10,
+        name: 'MusteringStation'
+      }];
       deck_length   = 105.2;
       deck_width    = 34;
       deckMinX = -deck_length / 2; deckMaxX = deck_length / 2;
@@ -278,8 +284,14 @@ function initializeConfiguration() {
     else if (deck_configuration === "test6") {
       no_compartments = 1;
       deck_length = 12; deck_width = 12;
-      mes_x_global = 11; mes_y_global = 11;
-      mes_length = 2; mes_width = 2;
+      // Single mustering station for test6 mode
+      musteringStationsData = [{
+        x: 11,
+        y: 11,
+        length: 2,
+        width: 2,
+        name: 'MusteringStation'
+      }];
       deckMinX = -deck_length / 2; deckMaxX = deck_length / 2;
       deckMinY = -deck_width / 2;  deckMaxY = deck_width / 2;
       deckCenterX = 0; deckCenterY = 0;
@@ -299,16 +311,52 @@ function initializeConfiguration() {
           deck_width  = 34;
         }
       
-        // 2) Count compartments (exclude MusteringStation):
-        no_compartments = Object.keys(deckArrangement.arrangements.compartments)
-                                 .filter(k => k !== 'MusteringStation').length;
+        // 2) Count compartments (exclude MusteringStation if it's in compartments):
+        const compartmentKeys = Object.keys(deckArrangement.arrangements.compartments || {});
+        no_compartments = compartmentKeys.filter(k => k !== 'MusteringStation').length;
       
         // 3) Mustering station parameters:
-        const ms = deckArrangement.arrangements.compartments.MusteringStation.attributes;
-        mes_length   = Number(ms.length);
-        mes_width    = Number(ms.width);
-        mes_x_global = Number(ms.x);
-        mes_y_global = Number(ms.y);
+        // Check if musteringStations exists as a separate key (new structure)
+        musteringStationsData = [];
+        
+        if (deckArrangement.arrangements.musteringStations && 
+            Object.keys(deckArrangement.arrangements.musteringStations).length > 0) {
+          // New structure: read all mustering stations from musteringStations
+          const musteringStationKeys = Object.keys(deckArrangement.arrangements.musteringStations);
+          console.log(`Loading ${musteringStationKeys.length} mustering station(s) from musteringStations`);
+          
+          musteringStationKeys.forEach(key => {
+            const ms = deckArrangement.arrangements.musteringStations[key].attributes;
+            musteringStationsData.push({
+              x: Number(ms.x),
+              y: Number(ms.y),
+              length: Number(ms.length),
+              width: Number(ms.width),
+              name: key
+            });
+            console.log(`  - ${key}: x=${ms.x}, y=${ms.y}, L=${ms.length}, W=${ms.width}`);
+          });
+        } else if (deckArrangement.arrangements.compartments?.MusteringStation) {
+          // Old structure: read from compartments.MusteringStation for backward compatibility
+          const ms = deckArrangement.arrangements.compartments.MusteringStation.attributes;
+          musteringStationsData.push({
+            x: Number(ms.x),
+            y: Number(ms.y),
+            length: Number(ms.length),
+            width: Number(ms.width),
+            name: 'MusteringStation'
+          });
+          console.log('Using mustering station from compartments (legacy structure)');
+        } else {
+          console.warn('No mustering station found in JSON; using default values');
+          musteringStationsData.push({
+            x: 0,
+            y: 0,
+            length: 5,
+            width: 10,
+            name: 'MusteringStation_default'
+          });
+        }
         // Optional complex deck outline (polygon) for JSON decks.
         parseDeckOutline(deckEntry);
         if (deckOutline) {
@@ -620,24 +668,51 @@ function createCompartments() {
 function addMusteringStation() {
     const offsetX = deck_configuration === 'json' ? 0 : deck_length / 2;
     const offsetY = deck_configuration === 'json' ? 0 : deck_width / 2;
-    mustering = new THREE.Mesh(
-        new THREE.BoxGeometry(mes_length, mes_width, 2.5),
-        new THREE.MeshBasicMaterial({ color: 'red', opacity: 0.5, transparent: true })
-    );
-    mustering.position.set(
-        mes_x_global - offsetX,
-        mes_y_global - offsetY,
-        0
-      );
-
-    mustering_inner = new THREE.Mesh(
-        new THREE.BoxGeometry(mes_length - 1, mes_width - 1, 2.5),
-        new THREE.MeshBasicMaterial({ color: 'red', opacity: 0.5, transparent: true })
-    );
-    mustering_inner.position.copy(mustering.position);
-    MusteringBB = new THREE.Box3().setFromObject(mustering_inner);
-
-    scene.add(mustering);
+    
+    // Clear existing mustering stations
+    musteringStations.forEach(mesh => scene.remove(mesh));
+    musteringStations_inner.forEach(mesh => scene.remove(mesh));
+    musteringStations = [];
+    musteringStations_inner = [];
+    musteringStationsBB = [];
+    
+    // Create mesh for each mustering station
+    musteringStationsData.forEach((msData, index) => {
+        // Outer mesh (semi-transparent)
+        const mustering = new THREE.Mesh(
+            new THREE.BoxGeometry(msData.length, msData.width, 2.5),
+            new THREE.MeshBasicMaterial({ color: 'red', opacity: 0.5, transparent: true })
+        );
+        mustering.position.set(
+            msData.x - offsetX,
+            msData.y - offsetY,
+            0
+        );
+        mustering.name = msData.name;
+        
+        // Inner mesh (for collision detection)
+        const mustering_inner = new THREE.Mesh(
+            new THREE.BoxGeometry(msData.length - 1, msData.width - 1, 2.5),
+            new THREE.MeshBasicMaterial({ color: 'red', opacity: 0.5, transparent: true })
+        );
+        mustering_inner.position.copy(mustering.position);
+        mustering_inner.name = msData.name + '_inner';
+        
+        // Bounding box
+        const musteringBB = new THREE.Box3().setFromObject(mustering_inner);
+        
+        // Store in arrays
+        musteringStations.push(mustering);
+        musteringStations_inner.push(mustering_inner);
+        musteringStationsBB.push(musteringBB);
+        
+        // Add to scene
+        scene.add(mustering);
+        
+        console.log(`Created mustering station ${index}: ${msData.name} at (${msData.x}, ${msData.y})`);
+    });
+    
+    console.log(`Total ${musteringStations.length} mustering station(s) created`);
 }
 
 /**
@@ -742,14 +817,23 @@ function setupDragControls() {
         document.getElementById("startSim").disabled = false;
     });
 
-    MESdragControls = new DragControls([mustering], camera, renderer.domElement);
+    MESdragControls = new DragControls(musteringStations, camera, renderer.domElement);
     // While dragging, force the mustering station to remain at z = 0.
     MESdragControls.addEventListener('drag', (event) => {
         event.object.position.z = 0;
+        // Find the index of the dragged mustering station and update its inner mesh
+        const index = musteringStations.indexOf(event.object);
+        if (index !== -1 && musteringStations_inner[index]) {
+            musteringStations_inner[index].position.copy(event.object.position);
+        }
     });
     MESdragControls.addEventListener('dragend', (event) => {
-        mustering_inner.position.copy(event.object.position);
-        MusteringBB.setFromObject(mustering_inner);
+        // Find the index of the dragged mustering station
+        const index = musteringStations.indexOf(event.object);
+        if (index !== -1) {
+            musteringStations_inner[index].position.copy(event.object.position);
+            musteringStationsBB[index].setFromObject(musteringStations_inner[index]);
+        }
         cancelAnimationFrame(animationId);
         disposePersons();
         createPersons(no_persons);
@@ -801,6 +885,7 @@ class Human {
         scene.add(this.geometry);
         this.hasReachedInterface = false;
         this.currentCompartmentIndex = null;     // directMovement can ignore the right room
+        this.targetMusteringStationIndex = 0;    // Index of the nearest mustering station
     }
 }
 
@@ -824,10 +909,32 @@ function isPositionInsideAnyCompartment(position) {
 }
 
 // Check if a position is inside the mustering station, using an expanded bounding box
+// Uses the first mustering station (index 0) as the target for evacuation
 function isPositionInMusteringStation(position) {
-    if (!MusteringBB) return false;
-    const expandedBB = MusteringBB.clone().expandByScalar(1);
+    if (!musteringStationsBB || musteringStationsBB.length === 0) return false;
+    const expandedBB = musteringStationsBB[0].clone().expandByScalar(1);
     return expandedBB.containsPoint(position);
+}
+
+// Find the index of the nearest mustering station to a given position
+function findNearestMusteringStation(position) {
+    if (!musteringStations_inner || musteringStations_inner.length === 0) return 0;
+    
+    let nearestIndex = 0;
+    let minDistance = Infinity;
+    
+    musteringStations_inner.forEach((station, index) => {
+        const dx = station.position.x - position.x;
+        const dy = station.position.y - position.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance < minDistance) {
+            minDistance = distance;
+            nearestIndex = index;
+        }
+    });
+    
+    return nearestIndex;
 }
 
 // Determine if a point lies within the current deck (polygon-aware for JSON uploads).
@@ -960,13 +1067,19 @@ function createPersons(num) {
           );
         }
         human.geometry.position.copy(candidate);
+        // Assign the nearest mustering station to this person
+        human.targetMusteringStationIndex = findNearestMusteringStation(candidate);
+        console.log(`Person ${i} assigned to mustering station ${human.targetMusteringStationIndex}`);
         return human;
     });
 }
 
 function directMovement(person,i) {
-    const deltaX = mustering_inner.position.x - person.geometry.position.x;
-    const deltaY = mustering_inner.position.y - person.geometry.position.y;
+    // Move toward the person's assigned mustering station
+    if (!musteringStations_inner || musteringStations_inner.length === 0) return;
+    const targetIndex = person.targetMusteringStationIndex || 0;
+    const deltaX = musteringStations_inner[targetIndex].position.x - person.geometry.position.x;
+    const deltaY = musteringStations_inner[targetIndex].position.y - person.geometry.position.y;
     const angle = Math.atan2(deltaY, deltaX);
     const move = deltaT * person.speed;
 
@@ -1015,7 +1128,8 @@ function directMovement(person,i) {
     person.time.push(time_step);
     person.BB.setFromObject(person.geometry);
     document.getElementById("movment" + String(i + 1)).innerText = person.dist.toFixed(2);
-    if (MusteringBB.intersectsBox(person.BB)) {
+    // Check if person has reached their assigned mustering station
+    if (musteringStationsBB.length > targetIndex && musteringStationsBB[targetIndex].intersectsBox(person.BB)) {
         inMES[i] = 1;
     }
 }
@@ -1053,15 +1167,15 @@ function interfaceAwareMovement(person, i) {
       person.hasReachedInterface = true;   // NEW
       return;                              // leave the room this frame
     }
-    // 4) Temporarily steer ‘mustering_inner’ to the door…
-    const oldPos = mustering_inner.position.clone();
-    mustering_inner.position.set(targetX, targetY, oldPos.z);
+    // 4) Temporarily steer the person's assigned mustering station to the door...
+    const oldPos = musteringStations_inner[person.targetMusteringStationIndex || 0].position.clone();
+    musteringStations_inner[person.targetMusteringStationIndex || 0].position.set(targetX, targetY, oldPos.z);
   
     // 5) Reuse your directMovement logic to navigate to the door
     directMovement(person, i);
   
     // 6) Restore the real mustering station
-    mustering_inner.position.copy(oldPos);
+    musteringStations_inner[person.targetMusteringStationIndex || 0].position.copy(oldPos);
   }
 
 
@@ -1136,8 +1250,8 @@ function resetScene() {
     disposePersons();
     disposeMeshes([
         ...compartmentsMeshes,
-        mustering,
-        mustering_inner,
+        ...musteringStations,
+        ...musteringStations_inner,
         deck,
         persons.map((p) => p.geometry),
         interfaceMeshes
@@ -1358,37 +1472,43 @@ $("#no_persons").on("change", function() {
         return traces;
     }
 
-    function buildMusteringTrace() {
-        if (!mustering_inner || !mustering_inner.geometry || !mustering_inner.position) return null;
-        const params = mustering_inner.geometry.parameters || {};
-        const L = Number(params.width);
-        const W = Number(params.height);
-        if (!Number.isFinite(L) || !Number.isFinite(W)) return null;
+    function buildMusteringTraces() {
+        const traces = [];
+        if (!musteringStations_inner || musteringStations_inner.length === 0) return traces;
+        
+        musteringStations_inner.forEach((mustering_inner, idx) => {
+            if (!mustering_inner || !mustering_inner.geometry || !mustering_inner.position) return;
+            const params = mustering_inner.geometry.parameters || {};
+            const L = Number(params.width);
+            const W = Number(params.height);
+            if (!Number.isFinite(L) || !Number.isFinite(W)) return;
 
-        const cx = Number(mustering_inner.position.x);
-        const cy = Number(mustering_inner.position.y);
-        const rot = Number(mustering_inner.rotation?.z || 0);
+            const cx = Number(mustering_inner.position.x);
+            const cy = Number(mustering_inner.position.y);
+            const rot = Number(mustering_inner.rotation?.z || 0);
 
-        const { xs, ys } = rectCorners2D(cx, cy, L, W, rot);
+            const { xs, ys } = rectCorners2D(cx, cy, L, W, rot);
 
-        return {
-            x: xs.map(v => v + xShift),
-            y: ys.map(v => v + yShift),
-            mode: 'lines',
-            name: 'Mustering station',
-            showlegend: false,
-            line: { width: 2 },
-            fill: 'toself',
-            fillcolor: 'rgba(255, 0, 0, 0.10)'
-        };
+            traces.push({
+                x: xs.map(v => v + xShift),
+                y: ys.map(v => v + yShift),
+                mode: 'lines',
+                name: mustering_inner.name || `Mustering station ${idx + 1}`,
+                showlegend: false,
+                line: { width: 2 },
+                fill: 'toself',
+                fillcolor: 'rgba(255, 0, 0, 0.10)'
+            });
+        });
+        
+        return traces;
     }
 
     // Assemble traces: deck + rooms + mustering + persons
     const data = [];
     data.push(buildDeckOutlineTrace());
     data.push(...buildRoomTraces());
-    const msTrace = buildMusteringTrace();
-    if (msTrace) data.push(msTrace);
+    data.push(...buildMusteringTraces());
 
     for (let i = 0; i < no_persons; i++) {
         if (!persons[i] || !Array.isArray(persons[i].x)) continue;
