@@ -299,12 +299,28 @@ function initializeConfiguration() {
           deck_width  = 34;
         }
       
-        // 2) Count compartments (exclude MusteringStation):
-        no_compartments = Object.keys(deckArrangement.arrangements.compartments)
-                                 .filter(k => k !== 'MusteringStation').length;
+        // 2) Count compartments (exclude MusteringStation if it's in compartments):
+        const compartmentKeys = Object.keys(deckArrangement.arrangements.compartments || {});
+        no_compartments = compartmentKeys.filter(k => k !== 'MusteringStation').length;
       
         // 3) Mustering station parameters:
-        const ms = deckArrangement.arrangements.compartments.MusteringStation.attributes;
+        // Check if musteringStations exists as a separate key (new structure)
+        let ms;
+        if (deckArrangement.arrangements.musteringStations && 
+            Object.keys(deckArrangement.arrangements.musteringStations).length > 0) {
+          // New structure: read from musteringStations
+          const musteringStationKeys = Object.keys(deckArrangement.arrangements.musteringStations);
+          const firstMusteringStationKey = musteringStationKeys[0];
+          ms = deckArrangement.arrangements.musteringStations[firstMusteringStationKey].attributes;
+          console.log(`Using mustering station from musteringStations: ${firstMusteringStationKey}`);
+        } else if (deckArrangement.arrangements.compartments?.MusteringStation) {
+          // Old structure: read from compartments.MusteringStation for backward compatibility
+          ms = deckArrangement.arrangements.compartments.MusteringStation.attributes;
+          console.log('Using mustering station from compartments (legacy structure)');
+        } else {
+          console.warn('No mustering station found in JSON; using default values');
+          ms = { length: 5, width: 10, x: 0, y: 0 };
+        }
         mes_length   = Number(ms.length);
         mes_width    = Number(ms.width);
         mes_x_global = Number(ms.x);
