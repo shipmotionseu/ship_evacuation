@@ -25,6 +25,68 @@ let interfaceMeshes = [];       // mesh instances for cleanup
 let interfaceCompNames = new Set(); 
 let geometryLoadInProgress = false;
 
+// Normalize an outline array (supports [{x,y}] or [[x,y]]). Returns [{x,y}] without a duplicate closing point.
+function normalizeOutline(raw) {
+    if (!Array.isArray(raw)) return null;
+    const pts = raw.map((pt) => {
+        if (Array.isArray(pt) && pt.length >= 2) return { x: Number(pt[0]), y: Number(pt[1]) };
+        if (pt && typeof pt === 'object' && 'x' in pt && 'y' in pt) return { x: Number(pt.x), y: Number(pt.y) };
+        return null;
+    }).filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
+
+    if (pts.length < 3) return null;
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+    if (Math.abs(first.x - last.x) < 1e-9 && Math.abs(first.y - last.y) < 1e-9) {
+        pts.pop();
+    }
+    return pts;
+}
+
+// Ray casting point-in-polygon (2D)
+function pointInPolygon2D(px, py, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const xi = poly[i].x, yi = poly[i].y;
+        const xj = poly[j].x, yj = poly[j].y;
+        const intersect = ((yi > py) !== (yj > py)) &&
+            (px < (xj - xi) * (py - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+    }
+    return inside;
+}
+
+// For polygon rooms we store an *absolute* outline in userData.outline; when dragged, add mesh.position shift.
+function getMeshOutlineGlobal(mesh) {
+    const base = mesh?.userData?.outline;
+    if (!Array.isArray(base) || base.length < 3) return null;
+    const dx = Number(mesh.position?.x || 0);
+    const dy = Number(mesh.position?.y || 0);
+    return base.map((p) => ({ x: Number(p.x) + dx, y: Number(p.y) + dy }));
+}
+
+function isPointInsideCompartmentIndex(position, idx) {
+    const mesh = compartmentsMeshes[idx];
+    if (!mesh) return false;
+
+    const outline = getMeshOutlineGlobal(mesh);
+    if (outline) {
+        return pointInPolygon2D(position.x, position.y, outline);
+    }
+
+    const bb = compartmentsBB[idx];
+    if (!bb) return false;
+    const expanded = bb.clone().expandByScalar(1);
+    return expanded.containsPoint(position);
+}
+
+function getCompartmentIndexAtPoint(position) {
+    for (let i = 0; i < compartmentsMeshes.length; i++) {
+        if (isPointInsideCompartmentIndex(position, i)) return i;
+    }
+    return -1;
+}
+
 // Normalize a deck outline array (supports [{x,y}] or [[x,y]]).
 function parseDeckOutline(deckEntry) {
     deckOutline = null;
@@ -322,33 +384,110 @@ function getCompartmentConfiguration(config) {
 }
 
 function createCompartments() {
-    const config = getCompartmentConfiguration(deck_configuration);
     compartments = [];
     compartmentsBB = [];
-    compartmentsMeshes = []; 
+    compartmentsMeshes = [];
 
+    // JSON mode: build each room as either a Box (rectangle) or an extruded polygon
+    if (deck_configuration === 'json' && deckArrangement?.arrangements?.compartments) {
+        const comps = deckArrangement.arrangements.compartments;
+        const keys = Object.keys(comps).filter(k => k !== 'MusteringStation');
+        no_compartments = keys.length;
+
+        keys.forEach((name) => {
+            const attrs = comps[name]?.attributes || {};
+            const color = attrs.color || 'yellow';
+            const height = Number(attrs.height ?? 2);
+            const zCenter = Number(attrs.z ?? 1);
+            const rotDeg = Number(attrs.rotation ?? 0);
+            const shapeType = String(attrs.shape || '').toLowerCase();
+            const outline = normalizeOutline(attrs.outline);
+
+            let mesh;
+
+            if (outline && (shapeType === 'polygon' || shapeType === '')) {
+                // Polygon footprint in absolute deck coordinates.
+                const shape = new THREE.Shape();
+                shape.moveTo(outline[0].x, outline[0].y);
+                for (let i = 1; i < outline.length; i++) {
+                    shape.lineTo(outline[i].x, outline[i].y);
+                }
+                shape.closePath();
+
+                const geom = new THREE.ExtrudeGeometry(shape, {
+                    depth: height,
+                    bevelEnabled: false
+                });
+
+                mesh = new THREE.Mesh(
+                    geom,
+                    new THREE.MeshBasicMaterial({
+                        color: color,
+                        transparent: true,
+                        opacity: 0.3,
+                        side: THREE.DoubleSide
+                    })
+                );
+
+                // ExtrudeGeometry spans z=[0..height], so shift to match zCenter as the mesh center.
+                mesh.position.set(0, 0, zCenter - height / 2);
+
+                // Store absolute outline for plotting + point-in-room tests
+                mesh.userData.outline = outline;
+                mesh.userData.shape = 'polygon';
+                mesh.userData.zCenter = zCenter;
+                mesh.userData.height = height;
+
+                // IMPORTANT: do NOT apply attrs.rotation here; the polygon is already in global coordinates.
+            } else {
+                // Rectangle (default)
+                const L = Number(attrs.length ?? 1);
+                const W = Number(attrs.width ?? 1);
+
+                mesh = new THREE.Mesh(
+                    new THREE.BoxGeometry(L, W, height),
+                    new THREE.MeshBasicMaterial({
+                        color: color,
+                        transparent: true,
+                        opacity: 0.3
+                    })
+                );
+                mesh.position.set(Number(attrs.x ?? 0), Number(attrs.y ?? 0), zCenter);
+                mesh.rotation.z = (Math.PI * rotDeg) / 180.0;
+                mesh.userData.shape = 'rectangle';
+                mesh.userData.zCenter = zCenter;
+                mesh.userData.height = height;
+            }
+
+            mesh.name = name;
+            scene.add(mesh);
+            compartmentsMeshes.push(mesh);
+            compartmentsBB.push(new THREE.Box3().setFromObject(mesh));
+        });
+
+        return;
+    }
+
+    // Non-JSON modes: keep the legacy box-based compartments
+    const config = getCompartmentConfiguration(deck_configuration);
     for (let i = 0; i < no_compartments; i++) {
         const color = config.comp_color && config.comp_color[i] ? config.comp_color[i] : 'yellow';
 
         const compartment = new THREE.Mesh(
             new THREE.BoxGeometry(config.comp_length[i], config.comp_width[i], config.comp_height[i]),
             new THREE.MeshBasicMaterial({
-                color: color,        // <-- USE JSON COLOR
+                color: color,
                 transparent: true,
                 opacity: 0.3
-             })
+            })
         );
         compartment.position.set(config.comp_x[i], config.comp_y[i], 1);
         compartment.rotation.z = (Math.PI * config.compy_angle[i]) / 180.0;
-        scene.add(compartment);
+        compartment.userData.shape = 'rectangle';
+        compartment.userData.zCenter = 1;
+        compartment.userData.height = Number(config.comp_height[i] ?? 2);
 
-        if (deck_configuration === 'json' && deckArrangement) {
-            // we need the name so we can look up interfaces later
-            const compNames = Object
-              .keys(deckArrangement.arrangements.compartments)
-              .filter(k => k !== 'MusteringStation');
-            compartment.name = compNames[i];
-        }
+        scene.add(compartment);
         compartmentsMeshes.push(compartment);
         compartmentsBB.push(new THREE.Box3().setFromObject(compartment));
     }
@@ -450,9 +589,13 @@ function setupDragControls() {
     if (MESdragControls) MESdragControls.dispose();
 
     compDragControls = new DragControls(compartmentsMeshes, camera, renderer.domElement);
-    // While dragging, force compartments to remain at z = 1.
+    // While dragging, keep each compartment at its intended z centre.
     compDragControls.addEventListener('drag', (event) => {
-        event.object.position.z = 1;
+        const obj = event.object;
+        const zc = Number(obj?.userData?.zCenter ?? 1);
+        const h  = Number(obj?.userData?.height ?? 0);
+        if (obj?.userData?.shape === 'polygon') obj.position.z = zc - h / 2;
+        else obj.position.z = zc;
     });
     compDragControls.addEventListener('dragend', () => {
         compartmentsMeshes.forEach((mesh, i) => {
@@ -543,10 +686,7 @@ function getRandomPositionOnLimitedArea(limits) {
 
 // Check if a given position is inside any compartment, using an expanded bounding box
 function isPositionInsideAnyCompartment(position) {
-    return compartmentsBB.some(bb => {
-        const expandedBB = bb.clone().expandByScalar(1);
-        return expandedBB.containsPoint(position);
-    });
+    return getCompartmentIndexAtPoint(position) >= 0;
 }
 
 // Check if a position is inside the mustering station, using an expanded bounding box
@@ -652,7 +792,7 @@ function createPersons(num) {
               // 2) …and that compartment’s name must be in our interfaceCompNames
               ![...interfaceCompNames].some(name => {
                 const idx = compartmentsMeshes.findIndex(m => m.name === name);
-                return idx >= 0 && compartmentsBB[idx].containsPoint(candidate);
+                return idx >= 0 && isPointInsideCompartmentIndex(candidate, idx);
               })
               ||
               // 3) must also sit on the deck outline
@@ -705,7 +845,7 @@ function directMovement(person,i) {
         // ignore the wall of the compartment you’re currently inside—
         // so you can actually step through the opening
         if (idx === person.currentCompartmentIndex
-            && bb.containsPoint(person.geometry.position)) {
+            && isPointInsideCompartmentIndex(person.geometry.position, idx)) {
             return false;
         }
         return bb.intersectsBox(newBB);
@@ -748,9 +888,9 @@ function directMovement(person,i) {
 
 function interfaceAwareMovement(person, i) {
     // 1) Figure out which compartment they’re in
-    const compIndex = compartmentsBB.findIndex(bb => bb.containsPoint(person.geometry.position));
+    const compIndex = getCompartmentIndexAtPoint(person.geometry.position);
     person.currentCompartmentIndex = compIndex;
-    const compName  = compartmentsMeshes[compIndex]?.name;
+    const compName  = (compIndex >= 0) ? compartmentsMeshes[compIndex]?.name : null;
     if (!compName) {
       directMovement(person, i);
       return;
@@ -824,9 +964,7 @@ function interfaceAwareMovement(person, i) {
           // 2b) Interfaces exist → decide based on room membership
           if (!person.hasReachedInterface) {
             // still need to exit your room
-            const insideRoom = compartmentsBB.some(bb =>
-              bb.containsPoint(person.geometry.position)
-            );
+            const insideRoom = (getCompartmentIndexAtPoint(person.geometry.position) >= 0);
             if (insideRoom) {
               interfaceAwareMovement(person, i);
             } else {
@@ -1030,13 +1168,36 @@ $("#no_persons").on("change", function() {
             line: { width: 2 }
         };
     }
-
     function buildRoomTraces() {
         const traces = [];
         if (!Array.isArray(compartmentsMeshes) || compartmentsMeshes.length === 0) return traces;
 
         compartmentsMeshes.forEach((mesh, idx) => {
-            if (!mesh || !mesh.geometry || !mesh.position) return;
+            if (!mesh) return;
+
+            // Polygon rooms
+            const outline = getMeshOutlineGlobal(mesh);
+            if (outline && outline.length >= 3) {
+                let xs = outline.map(p => Number(p.x));
+                let ys = outline.map(p => Number(p.y));
+                xs = xs.concat(xs[0]);
+                ys = ys.concat(ys[0]);
+
+                traces.push({
+                    x: xs.map(v => v + xShift),
+                    y: ys.map(v => v + yShift),
+                    mode: 'lines',
+                    name: mesh.name ? `Room: ${mesh.name}` : `Room ${idx + 1}`,
+                    showlegend: false,
+                    line: { width: 1 },
+                    fill: 'toself',
+                    fillcolor: 'rgba(0, 0, 255, 0.10)'
+                });
+                return;
+            }
+
+            // Rectangle rooms
+            if (!mesh.geometry || !mesh.position) return;
             const params = mesh.geometry.parameters || {};
             const L = Number(params.width);
             const W = Number(params.height);
