@@ -23,6 +23,7 @@ let deckOutline = null;         // optional outline when loaded from JSON
 let customInterfaces = [];      // holds parsed interface attributes
 let interfaceMeshes = [];       // mesh instances for cleanup
 let interfaceCompNames = new Set(); 
+let geometryLoadInProgress = false;
 
 // Normalize a deck outline array (supports [{x,y}] or [[x,y]]).
 function parseDeckOutline(deckEntry) {
@@ -42,21 +43,38 @@ function parseDeckOutline(deckEntry) {
     }).filter((pt) => pt && Number.isFinite(pt.x) && Number.isFinite(pt.y));
 
     if (points.length >= 3) {
+        // If the outline is already closed (last point == first), drop the duplicate end point.
+        const firstPt = points[0];
+        const lastPt = points[points.length - 1];
+        if (Math.abs(firstPt.x - lastPt.x) < 1e-9 && Math.abs(firstPt.y - lastPt.y) < 1e-9) {
+            points.pop();
+        }
         deckOutline = points;
     }
 }
 
 function loadGeometryFile(event) {
-    const file = event.target.files[0];
+    const file = event?.target?.files?.[0];
     if (!file) return;
+
+    // Prevent double-trigger (e.g., inline onchange + addEventListener)
+    if (geometryLoadInProgress) return;
+    geometryLoadInProgress = true;
+
     const reader = new FileReader();
     reader.onload = e => {
-      deckArrangement = JSON.parse(e.target.result);
-      deck_configuration = 'json';
-      // re‐draw with new data
-      resetScene();
-      document.getElementById('radio3').checked = true;
+      try {
+        deckArrangement = JSON.parse(e.target.result);
+        deck_configuration = 'json';
+        // re-draw with new data
+        resetScene();
+        const r3 = document.getElementById('radio3');
+        if (r3) r3.checked = true;
+      } finally {
+        geometryLoadInProgress = false;
+      }
     };
+    reader.onerror = () => { geometryLoadInProgress = false; };
     reader.readAsText(file);
   }
 
@@ -87,6 +105,9 @@ function initializeConfiguration() {
       deckCenterX = 0; deckCenterY = 0;
     }
     else if (deck_configuration === "json" && deckArrangement) {
+        // Reset interface-related state for each new JSON load
+        interfaceCompNames.clear();
+        customInterfaces = [];
         // 1) Read deck size from JSON:
         const deckEntry = deckArrangement.arrangements.deck;
         if (deckEntry && deckEntry.attributes) {
@@ -168,7 +189,14 @@ function adjustCameraPosition() {
     camera.position.x = deckCenter.x;
     camera.position.y = deckCenter.y;
     camera.position.z = requiredZ / 1.7;
-    if (orbitControls) orbitControls.target.copy(deckCenter);
+    camera.lookAt(deckCenter);
+    if (orbitControls) {
+        orbitControls.target.copy(deckCenter);
+        // sync immediately even when not animating
+        orbitControls.update();
+    }
+    // Ensure the far plane is large enough even if geometry is accidentally in mm
+    camera.far = Math.max(1000, requiredZ * 5);
     camera.updateProjectionMatrix();
 }
 
@@ -188,19 +216,38 @@ function createScene() {
 }
 
 function disposeMeshes(meshes) {
-    meshes.forEach((mesh) => {
-        if (mesh) {
-            scene.remove(mesh);
-            if (mesh.geometry) mesh.geometry.dispose();
-            if (mesh.material) {
-                if (Array.isArray(mesh.material)) mesh.material.forEach((mat) => mat.dispose());
-                else mesh.material.dispose();
+    if (!Array.isArray(meshes)) return;
+
+    const visit = (item) => {
+        if (!item) return;
+        if (Array.isArray(item)) {
+            item.forEach(visit);
+            return;
+        }
+
+        // Only attempt to remove/dispose THREE objects
+        if (scene && typeof scene.remove === 'function') {
+            scene.remove(item);
+        }
+        if (item.geometry && typeof item.geometry.dispose === 'function') {
+            item.geometry.dispose();
+        }
+        if (item.material) {
+            if (Array.isArray(item.material)) {
+                item.material.forEach((mat) => mat && mat.dispose && mat.dispose());
+            } else if (item.material.dispose) {
+                item.material.dispose();
             }
         }
-    });
+    };
+
+    meshes.forEach(visit);
 }
 
 function createDeck() {
+    const deckColor = (deck_configuration === 'json' && deckArrangement?.arrangements?.deck?.attributes?.color)
+        ? deckArrangement.arrangements.deck.attributes.color
+        : 'lightblue';
     // For JSON-uploaded decks, draw the provided polygon outline; fallback to box for other modes.
     if (deck_configuration === 'json' && deckOutline && deckOutline.length >= 3) {
         const shape = new THREE.Shape();
@@ -218,7 +265,7 @@ function createDeck() {
         });
         deck = new THREE.Mesh(
             geometry,
-            new THREE.MeshBasicMaterial({ color: 'lightblue' })
+            new THREE.MeshBasicMaterial({ color: deckColor, side: THREE.DoubleSide })
         );
         deck.position.z = 0;
         deckBB = new THREE.Box3().setFromObject(deck);
@@ -226,7 +273,7 @@ function createDeck() {
     } else {
         deck = new THREE.Mesh(
             new THREE.BoxGeometry(deck_length, deck_width, 0.02),
-            new THREE.MeshBasicMaterial({ color: 'lightblue' })
+            new THREE.MeshBasicMaterial({ color: deckColor, side: THREE.DoubleSide })
         );
         deck.position.z = 0;
         deckBB = new THREE.Box3().setFromObject(deck);
@@ -1103,11 +1150,7 @@ $("#saveResultJSON").on("click", function() {
 
 });
 
-window.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('geometryFileInput')
-            .addEventListener('change', loadGeometryFile);
-  });
-
-  if (typeof window !== 'undefined') {
-    window.loadGeometryFile = loadGeometryFile;
-  }
+// Expose for the inline onchange handler in index.html
+if (typeof window !== 'undefined') {
+  window.loadGeometryFile = loadGeometryFile;
+}
