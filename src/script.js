@@ -149,6 +149,8 @@ let deck_length, deck_width;
 let deckMinX = 0, deckMaxX = 0, deckMinY = 0, deckMaxY = 0;
 let deckCenterX = 0, deckCenterY = 0;
 let jsonCoordOffsetX = 0, jsonCoordOffsetY = 0; // JSON local->ship coordinate offset (m)
+let originMarkerGroup = null;
+let showOriginMarker = true; // set false to disable debug origin marker and camera framing
 let deltaT = 0;
 const clock = new THREE.Clock();
 let time_step = 0;
@@ -449,6 +451,10 @@ function initializeConfiguration() {
 function adjustCameraPosition() {
     // Update deck bounding box based on the current deck geometry
     deckBB = new THREE.Box3().setFromObject(deck);
+    // If enabled, include world origin in framing so the marker cannot be off-screen.
+    if (showOriginMarker) {
+        deckBB.expandByPoint(new THREE.Vector3(0, 0, 0));
+    }
     const deckSize = new THREE.Vector3();
     deckBB.getSize(deckSize);
     const maxDeckSize = Math.max(deckSize.x, deckSize.y);
@@ -484,6 +490,53 @@ function createScene() {
 
     scene.background = new THREE.Color(0xffffff);
 }
+
+/**
+ * Draw a visible origin marker at world (0,0,0) for debugging:
+ * - 10 m XYZ axes (AxesHelper)
+ * - yellow sphere at the origin
+ * Drawn "on top" (depthTest disabled) so it remains visible.
+ */
+function drawOriginMarker() {
+    if (!showOriginMarker || !scene) return;
+
+    // Remove previous marker if any
+    if (originMarkerGroup) {
+        scene.remove(originMarkerGroup);
+        originMarkerGroup.traverse((obj) => {
+            if (obj.geometry && typeof obj.geometry.dispose === 'function') obj.geometry.dispose();
+            if (obj.material) {
+                if (Array.isArray(obj.material)) obj.material.forEach((m) => m?.dispose?.());
+                else obj.material.dispose?.();
+            }
+        });
+        originMarkerGroup = null;
+    }
+
+    const g = new THREE.Group();
+    g.name = 'OriginMarker';
+
+    const axes = new THREE.AxesHelper(10);
+    axes.renderOrder = 9999;
+    // Ensure axes draw on top of deck/rooms
+    if (axes.material) {
+        if (Array.isArray(axes.material)) axes.material.forEach((m) => { m.depthTest = false; m.depthWrite = false; });
+        else { axes.material.depthTest = false; axes.material.depthWrite = false; }
+    }
+    g.add(axes);
+
+    const sphere = new THREE.Mesh(
+        new THREE.SphereGeometry(0.6, 16, 16),
+        new THREE.MeshBasicMaterial({ color: 0xffff00, depthTest: false, depthWrite: false })
+    );
+    sphere.renderOrder = 10000;
+    sphere.position.set(0, 0, 0.5); // lift slightly above deck surface
+    g.add(sphere);
+
+    originMarkerGroup = g;
+    scene.add(originMarkerGroup);
+}
+
 
 function disposeMeshes(meshes) {
     if (!Array.isArray(meshes)) return;
@@ -539,6 +592,10 @@ function createDeck() {
         );
         deck.position.z = 0;
         deckBB = new THREE.Box3().setFromObject(deck);
+    // If enabled, include world origin in framing so the marker cannot be off-screen.
+    if (showOriginMarker) {
+        deckBB.expandByPoint(new THREE.Vector3(0, 0, 0));
+    }
         scene.add(deck);
     } else {
         deck = new THREE.Mesh(
@@ -547,6 +604,10 @@ function createDeck() {
         );
         deck.position.z = 0;
         deckBB = new THREE.Box3().setFromObject(deck);
+    // If enabled, include world origin in framing so the marker cannot be off-screen.
+    if (showOriginMarker) {
+        deckBB.expandByPoint(new THREE.Vector3(0, 0, 0));
+    }
         scene.add(deck);
     }
 }
@@ -1343,6 +1404,7 @@ function resetScene() {
 
     initializeConfiguration();
     createDeck();
+    drawOriginMarker();
     createCompartments();
     addMusteringStation();
     // only draw interfaces if JSON mode and we have definitions
@@ -1369,10 +1431,12 @@ function init() {
    initializeConfiguration();
    createScene();
    createDeck();
+   drawOriginMarker();
     deck_configuration = document.querySelector('input[name="options"]:checked').value;
     initializeConfiguration();
     createScene();
     createDeck();
+   drawOriginMarker();
     createCompartments();
     addMusteringStation();
     no_persons = Number(document.getElementById('no_persons').value) || 2;
