@@ -13,24 +13,35 @@ let no_persons = 2; // Initialize with the default value from your HTML input
 /**
  * PolygonBoundingBox - A custom bounding structure for polygon-shaped compartments
  * This replaces THREE.Box3 for irregular rooms to provide accurate bounds
+ * @class
  */
 class PolygonBoundingBox {
+    /**
+     * Creates a new PolygonBoundingBox.
+     * @param {Array<{x: number, y: number}>} outline - An array of 2D points defining the polygon vertices.
+     * @throws {Error} If the outline contains fewer than 3 points.
+     */
     constructor(outline) {
         if (!Array.isArray(outline) || outline.length < 3) {
             throw new Error('PolygonBoundingBox requires at least 3 points');
         }
+        /** @type {Array<{x: number, y: number}>} */
         this.outline = outline.map(p => ({ x: Number(p.x), y: Number(p.y) }));
         this.isPolygonBB = true;
         
         // Compute axis-aligned bounds for quick rejection tests
         const xs = this.outline.map(p => p.x);
         const ys = this.outline.map(p => p.y);
+        /** @type {THREE.Vector3} The minimum corner of the AABB. */
         this.min = new THREE.Vector3(Math.min(...xs), Math.min(...ys), 0);
+        /** @type {THREE.Vector3} The maximum corner of the AABB. */
         this.max = new THREE.Vector3(Math.max(...xs), Math.max(...ys), 0);
     }
     
     /**
      * Test if a point is contained within the polygon using ray casting
+     * @param {THREE.Vector3} point - The point to test (z-coordinate is ignored for 2D check).
+     * @returns {boolean} True if the point is strictly inside the polygon.
      */
     containsPoint(point) {
         // Quick AABB rejection test first
@@ -68,6 +79,8 @@ class PolygonBoundingBox {
     
     /**
      * Check intersection with another bounding box (Box3 or PolygonBoundingBox)
+     * @param {THREE.Box3|PolygonBoundingBox} other - The other bounding volume to test against.
+     * @returns {boolean} True if any overlap exists.
      */
     intersectsBox(other) {
         // Quick AABB test first
@@ -163,7 +176,13 @@ function normalizeOutline(raw) {
     return pts;
 }
 
-// Ray casting point-in-polygon (2D)
+/**
+ * Performs the Ray Casting algorithm (Jordan Curve Theorem) to check point-in-polygon status.
+ * @param {number} px - The X coordinate of the point.
+ * @param {number} py - The Y coordinate of the point.
+ * @param {Array<{x: number, y: number}>} poly - The array of polygon vertices.
+ * @returns {boolean} True if the point is inside the polygon.
+ */
 function pointInPolygon2D(px, py, poly) {
     let inside = false;
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -855,13 +874,24 @@ function setupControlKeyListeners() {
   });
 }
 
+/**
+ * Represents a person/agent in the evacuation simulation.
+ * @class
+ */
 class Human {
+    /**
+     * @param {number} id - Unique identifier for the person.
+     * @param {number} speed - Movement speed in m/s.
+     * @param {string|number} color - Hex color for the agent mesh.
+     */
     constructor(id, speed, color) {
         this.geometry = new THREE.Mesh(
             new THREE.BoxGeometry(0.5, 0.5, 1.8),
             new THREE.MeshBasicMaterial({ color })
         );
+        /** @type {number} Movement speed scalar. */
         this.speed = speed;
+        /** @type {THREE.Box3} Axis-aligned bounding box for the agent. */
         this.BB = new THREE.Box3().setFromObject(this.geometry);
         this.movingUp = Math.random() < 0.5;
         this.stuckCount = 0;
@@ -871,7 +901,9 @@ class Human {
         this.time = [];
         this.dist = 0;
         scene.add(this.geometry);
+        /** @type {boolean} State flag indicating if the agent has exited a room via an interface. */
         this.hasReachedInterface = false;
+        /** @type {?number} The index of the compartment the agent starts in. */
         this.currentCompartmentIndex = null;     // directMovement can ignore the right room
         this.targetMusteringStationIndex = 0;    // Index of the nearest mustering station
     }
@@ -1062,6 +1094,13 @@ function createPersons(num) {
     });
 }
 
+/**
+ * Calculates and applies movement for an agent directly toward a target (Mustering Station).
+ * Implements collision detection and simple obstacle avoidance.
+ * Scientific Basis: Calculates displacement vector d = v * deltaT.
+ * @param {Human} person - The agent object to move.
+ * @param {number} i - The index of the agent in the global array.
+ */
 function directMovement(person,i) {
     // Move toward the person's assigned mustering station
     if (!musteringStations_inner || musteringStations_inner.length === 0) return;
@@ -1122,6 +1161,16 @@ function directMovement(person,i) {
     }
 }
 
+/**
+ * Handles hierarchical pathfinding for agents inside compartments with defined interfaces (doors).
+ * Logic Flow:
+ * 1. Identify which compartment the agent is in.
+ * 2. Find the associated interface (door) connecting to 'deck'.
+ * 3. Steer agent toward the door.
+ * 4. Once the door is reached, switch state to 'directMovement' toward the Mustering Station.
+ * @param {Human} person - The agent object.
+ * @param {number} i - The index of the agent.
+ */
 function interfaceAwareMovement(person, i) {
     // 1) Figure out which compartment they’re in
     const compIndex = getCompartmentIndexAtPoint(person.geometry.position);
@@ -1552,4 +1601,3 @@ $("#saveResultCSV").on("click", function() {
 $("#saveResultJSON").on("click", function() {
 
 });
-
