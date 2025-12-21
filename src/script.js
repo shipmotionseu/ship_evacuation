@@ -148,6 +148,9 @@ let musteringStationsData = []; // Array of {x, y, length, width, name} for all 
 let deck_length, deck_width;
 let deckMinX = 0, deckMaxX = 0, deckMinY = 0, deckMaxY = 0;
 let deckCenterX = 0, deckCenterY = 0;
+let jsonCoordOffsetX = 0, jsonCoordOffsetY = 0; // JSON local->ship coordinate offset (m)
+let originMarkerGroup = null;
+let showOriginMarker = true; // set false to disable debug origin marker and camera framing
 let deltaT = 0;
 const clock = new THREE.Clock();
 let time_step = 0;
@@ -272,6 +275,7 @@ function initializeConfiguration() {
     deckOutline = null;
     deckCenterX = 0; deckCenterY = 0;
     deckMinX = 0; deckMaxX = 0; deckMinY = 0; deckMaxY = 0;
+    jsonCoordOffsetX = 0; jsonCoordOffsetY = 0;
     if (deck_configuration === "simple") {
       no_compartments = 5;
       // Single mustering station for simple mode
@@ -375,25 +379,58 @@ function initializeConfiguration() {
           deckMaxY = Math.max(...ys);
           deck_length = deckMaxX - deckMinX;
           deck_width  = deckMaxY - deckMinY;
-          deckCenterX = 0;
-          deckCenterY = 0;
+          deckCenterX = (deckMinX + deckMaxX) / 2;
+          deckCenterY = (deckMinY + deckMaxY) / 2;
+          // Keep deck outline in ship coordinates (classic ship-design coordinate system).
         } else {
           deckOutline = null;
           deckMinX = Number(deckEntry.attributes.min_x ?? deckEntry.attributes.minX ?? -deck_length / 2);
           deckMaxX = Number(deckEntry.attributes.max_x ?? deckEntry.attributes.maxX ??  deck_length / 2);
           deckMinY = Number(deckEntry.attributes.min_y ?? deckEntry.attributes.minY ?? -deck_width / 2);
           deckMaxY = Number(deckEntry.attributes.max_y ?? deckEntry.attributes.maxY ??  deck_width / 2);
-          deckCenterX = 0;
-          deckCenterY = 0;
+          deckCenterX = (deckMinX + deckMaxX) / 2;
+          deckCenterY = (deckMinY + deckMaxY) / 2;
         }
+        // If JSON provides min_x/min_y but the outline (or other geometry) is in local coordinates,
+        // shift everything into the classic ship-design coordinate system.
+        const attrMinX = Number(deckEntry.attributes.min_x ?? deckEntry.attributes.minX ?? deckMinX);
+        const attrMinY = Number(deckEntry.attributes.min_y ?? deckEntry.attributes.minY ?? deckMinY);
+        jsonCoordOffsetX = attrMinX - deckMinX;
+        jsonCoordOffsetY = attrMinY - deckMinY;
+        const _coordTol = 1e-6;
+        if (Math.abs(jsonCoordOffsetX) > _coordTol || Math.abs(jsonCoordOffsetY) > _coordTol) {
+          // Shift deck outline (if present)
+          if (deckOutline && deckOutline.length >= 3) {
+            deckOutline = deckOutline.map(p => ({ x: Number(p.x) + jsonCoordOffsetX, y: Number(p.y) + jsonCoordOffsetY }));
+          }
+          // Shift derived deck bounds/center
+          deckMinX += jsonCoordOffsetX; deckMaxX += jsonCoordOffsetX;
+          deckMinY += jsonCoordOffsetY; deckMaxY += jsonCoordOffsetY;
+          deckCenterX += jsonCoordOffsetX; deckCenterY += jsonCoordOffsetY;
+          // Shift mustering station positions (they were read before the outline)
+          if (Array.isArray(musteringStationsData)) {
+            musteringStationsData = musteringStationsData.map(ms => ({
+              ...ms,
+              x: Number(ms.x) + jsonCoordOffsetX,
+              y: Number(ms.y) + jsonCoordOffsetY
+            }));
+          }
+        }
+
         // 4) Interface definitions (if any):
         const ifaceDefs = deckArrangement.arrangements.interfaces;
         if (ifaceDefs && Object.keys(ifaceDefs).length > 0) {
               // Convert each into a flat attributes object
-              customInterfaces = Object.keys(ifaceDefs).map(name => ({
-                name,
-                ...ifaceDefs[name].attributes
-              }));
+              // Convert each into a flat attributes object (and apply JSON min_x/min_y offset if needed)
+              customInterfaces = Object.keys(ifaceDefs).map(name => {
+                const attrs = ifaceDefs[name]?.attributes || {};
+                return {
+                  name,
+                  ...attrs,
+                  x: Number(attrs.x ?? 0) + jsonCoordOffsetX,
+                  y: Number(attrs.y ?? 0) + jsonCoordOffsetY
+                };
+              });
               console.warn("Custom geometry JSON contains interface definitions.");
               // Gather all compartment names mentioned in any interface
                 customInterfaces.forEach(iface => {
@@ -414,6 +451,10 @@ function initializeConfiguration() {
 function adjustCameraPosition() {
     // Update deck bounding box based on the current deck geometry
     deckBB = new THREE.Box3().setFromObject(deck);
+    // If enabled, include world origin in framing so the marker cannot be off-screen.
+    if (showOriginMarker) {
+        deckBB.expandByPoint(new THREE.Vector3(0, 0, 0));
+    }
     const deckSize = new THREE.Vector3();
     deckBB.getSize(deckSize);
     const maxDeckSize = Math.max(deckSize.x, deckSize.y);
@@ -449,6 +490,53 @@ function createScene() {
 
     scene.background = new THREE.Color(0xffffff);
 }
+
+/**
+ * Draw a visible origin marker at world (0,0,0) for debugging:
+ * - 10 m XYZ axes (AxesHelper)
+ * - yellow sphere at the origin
+ * Drawn "on top" (depthTest disabled) so it remains visible.
+ */
+function drawOriginMarker() {
+    if (!showOriginMarker || !scene) return;
+
+    // Remove previous marker if any
+    if (originMarkerGroup) {
+        scene.remove(originMarkerGroup);
+        originMarkerGroup.traverse((obj) => {
+            if (obj.geometry && typeof obj.geometry.dispose === 'function') obj.geometry.dispose();
+            if (obj.material) {
+                if (Array.isArray(obj.material)) obj.material.forEach((m) => m?.dispose?.());
+                else obj.material.dispose?.();
+            }
+        });
+        originMarkerGroup = null;
+    }
+
+    const g = new THREE.Group();
+    g.name = 'OriginMarker';
+
+    const axes = new THREE.AxesHelper(10);
+    axes.renderOrder = 9999;
+    // Ensure axes draw on top of deck/rooms
+    if (axes.material) {
+        if (Array.isArray(axes.material)) axes.material.forEach((m) => { m.depthTest = false; m.depthWrite = false; });
+        else { axes.material.depthTest = false; axes.material.depthWrite = false; }
+    }
+    g.add(axes);
+
+    const sphere = new THREE.Mesh(
+        new THREE.SphereGeometry(0.6, 16, 16),
+        new THREE.MeshBasicMaterial({ color: 0xffff00, depthTest: false, depthWrite: false })
+    );
+    sphere.renderOrder = 10000;
+    sphere.position.set(0, 0, 0.5); // lift slightly above deck surface
+    g.add(sphere);
+
+    originMarkerGroup = g;
+    scene.add(originMarkerGroup);
+}
+
 
 function disposeMeshes(meshes) {
     if (!Array.isArray(meshes)) return;
@@ -504,6 +592,10 @@ function createDeck() {
         );
         deck.position.z = 0;
         deckBB = new THREE.Box3().setFromObject(deck);
+    // If enabled, include world origin in framing so the marker cannot be off-screen.
+    if (showOriginMarker) {
+        deckBB.expandByPoint(new THREE.Vector3(0, 0, 0));
+    }
         scene.add(deck);
     } else {
         deck = new THREE.Mesh(
@@ -512,6 +604,10 @@ function createDeck() {
         );
         deck.position.z = 0;
         deckBB = new THREE.Box3().setFromObject(deck);
+    // If enabled, include world origin in framing so the marker cannot be off-screen.
+    if (showOriginMarker) {
+        deckBB.expandByPoint(new THREE.Vector3(0, 0, 0));
+    }
         scene.add(deck);
     }
 }
@@ -574,7 +670,10 @@ function createCompartments() {
             const zCenter = Number(attrs.z ?? 1);
             const rotDeg = Number(attrs.rotation ?? 0);
             const shapeType = String(attrs.shape || '').toLowerCase();
-            const outline = normalizeOutline(attrs.outline);
+            const outline0 = normalizeOutline(attrs.outline);
+            const outline = (outline0 && outline0.length >= 3)
+              ? outline0.map(p => ({ x: Number(p.x) + jsonCoordOffsetX, y: Number(p.y) + jsonCoordOffsetY }))
+              : null;
 
             let mesh;
 
@@ -625,7 +724,7 @@ function createCompartments() {
                         opacity: 0.3
                     })
                 );
-                mesh.position.set(Number(attrs.x ?? 0), Number(attrs.y ?? 0), zCenter);
+                mesh.position.set(Number(attrs.x ?? 0) + jsonCoordOffsetX, Number(attrs.y ?? 0) + jsonCoordOffsetY, zCenter);
                 mesh.rotation.z = (Math.PI * rotDeg) / 180.0;
                 mesh.userData.shape = 'rectangle';
                 mesh.userData.zCenter = zCenter;
@@ -1150,8 +1249,12 @@ function directMovement(person,i) {
     }
 
     // Record the new position and time:
-    person.x.push(deck_configuration === 'json' ? person.geometry.position.x : (person.geometry.position.x + deck_length / 2));
-    person.y.push(person.geometry.position.y);
+    person.x.push(deck_configuration === 'json'
+        ? person.geometry.position.x
+        : (person.geometry.position.x + deck_length / 2));
+    person.y.push(deck_configuration === 'json'
+        ? person.geometry.position.y
+        : person.geometry.position.y);
     person.time.push(time_step);
     person.BB.setFromObject(person.geometry);
     document.getElementById("movment" + String(i + 1)).innerText = person.dist.toFixed(2);
@@ -1194,8 +1297,12 @@ function interfaceAwareMovement(person, i) {
     }
   
     // 3) Compute the door’s position (JSON coords are deck-centered)
-    const targetX = deck_configuration === 'json' ? iface.x : (iface.x - deck_length/2);
-    const targetY = deck_configuration === 'json' ? iface.y : (iface.y - deck_width/2);
+    const targetX = (deck_configuration === 'json')
+      ? Number(iface.x ?? 0)
+      : (Number(iface.x ?? 0) - deck_length/2);
+    const targetY = (deck_configuration === 'json')
+      ? Number(iface.y ?? 0)
+      : (Number(iface.y ?? 0) - deck_width/2);
     // if we’re close enough to the door, switch to mustering logic
     const distToDoor = person.geometry.position.distanceTo(
       new THREE.Vector3(targetX, targetY, person.geometry.position.z)
@@ -1297,6 +1404,7 @@ function resetScene() {
 
     initializeConfiguration();
     createDeck();
+    drawOriginMarker();
     createCompartments();
     addMusteringStation();
     // only draw interfaces if JSON mode and we have definitions
@@ -1323,10 +1431,12 @@ function init() {
    initializeConfiguration();
    createScene();
    createDeck();
+   drawOriginMarker();
     deck_configuration = document.querySelector('input[name="options"]:checked').value;
     initializeConfiguration();
     createScene();
     createDeck();
+   drawOriginMarker();
     createCompartments();
     addMusteringStation();
     no_persons = Number(document.getElementById('no_persons').value) || 2;
@@ -1390,7 +1500,7 @@ $("#no_persons").on("change", function() {
     document.getElementById("movment2D").style.display = "block";
 
     const isJson = (deck_configuration === 'json');
-    const xShift = isJson ? 0 : (deck_length / 2);   // persons.x for non-JSON is stored as x_local + deck_length/2
+    const xShift = isJson ? 0 : (deck_length / 2);   // JSON: already in ship coords
     const yShift = 0;
 
     function rectCorners2D(cx, cy, L, W, rotRad) {
@@ -1541,11 +1651,52 @@ $("#no_persons").on("change", function() {
         return traces;
     }
 
+
+    function buildOriginAxisTraces() {
+        // Small axis marker at the global origin (0,0) in *plot* coordinates.
+        // Use xShift/yShift so it matches the same coordinate system as the plotted deck/rooms/person paths.
+        const ox = 0 + xShift;
+        const oy = 0 + yShift;
+
+        const maxDim = Math.max(Number(deck_length || 0), Number(deck_width || 0));
+        const axisLen = Math.max(1, 0.05 * (Number.isFinite(maxDim) ? maxDim : 100));
+
+        const xAxis = {
+            x: [ox, ox + axisLen],
+            y: [oy, oy],
+            mode: 'lines',
+            showlegend: false,
+            hoverinfo: 'skip',
+            line: { width: 3 }
+        };
+
+        const yAxis = {
+            x: [ox, ox],
+            y: [oy - axisLen, oy + axisLen],
+            mode: 'lines',
+            showlegend: false,
+            hoverinfo: 'skip',
+            line: { width: 3 }
+        };
+
+        const originPt = {
+            x: [ox],
+            y: [oy],
+            mode: 'markers',
+            showlegend: false,
+            hoverinfo: 'skip',
+            marker: { size: 10 }
+        };
+
+        return [xAxis, yAxis, originPt];
+    }
+
     // Assemble traces: deck + rooms + mustering + persons
     const data = [];
     data.push(buildDeckOutlineTrace());
     data.push(...buildRoomTraces());
     data.push(...buildMusteringTraces());
+    data.push(...buildOriginAxisTraces());
 
     for (let i = 0; i < no_persons; i++) {
         if (!persons[i] || !Array.isArray(persons[i].x)) continue;
@@ -1560,8 +1711,8 @@ $("#no_persons").on("change", function() {
 
     const layout = {
         title: 'Movement Paths',
-        xaxis: { title: 'X position', zeroline: false },
-        yaxis: { title: 'Y position', zeroline: false, scaleanchor: 'x', scaleratio: 1 },
+        xaxis: { title: 'X [m]', zeroline: true },
+        yaxis: { title: 'Y [m]', zeroline: true, scaleanchor: 'x', scaleratio: 1 },
         width: 1750,
         height: 700,
         margin: { l: 70, r: 20, t: 60, b: 60 }
