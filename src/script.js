@@ -1651,11 +1651,52 @@ $("#no_persons").on("change", function() {
         return traces;
     }
 
+
+    function buildOriginAxisTraces() {
+        // Small axis marker at the global origin (0,0) in *plot* coordinates.
+        // Use xShift/yShift so it matches the same coordinate system as the plotted deck/rooms/person paths.
+        const ox = 0 + xShift;
+        const oy = 0 + yShift;
+
+        const maxDim = Math.max(Number(deck_length || 0), Number(deck_width || 0));
+        const axisLen = Math.max(1, 0.05 * (Number.isFinite(maxDim) ? maxDim : 100));
+
+        const xAxis = {
+            x: [ox, ox + axisLen],
+            y: [oy, oy],
+            mode: 'lines',
+            showlegend: false,
+            hoverinfo: 'skip',
+            line: { width: 3 }
+        };
+
+        const yAxis = {
+            x: [ox, ox],
+            y: [oy - axisLen, oy + axisLen],
+            mode: 'lines',
+            showlegend: false,
+            hoverinfo: 'skip',
+            line: { width: 3 }
+        };
+
+        const originPt = {
+            x: [ox],
+            y: [oy],
+            mode: 'markers',
+            showlegend: false,
+            hoverinfo: 'skip',
+            marker: { size: 10 }
+        };
+
+        return [xAxis, yAxis, originPt];
+    }
+
     // Assemble traces: deck + rooms + mustering + persons
     const data = [];
     data.push(buildDeckOutlineTrace());
     data.push(...buildRoomTraces());
     data.push(...buildMusteringTraces());
+    data.push(...buildOriginAxisTraces());
 
     for (let i = 0; i < no_persons; i++) {
         if (!persons[i] || !Array.isArray(persons[i].x)) continue;
@@ -1670,8 +1711,8 @@ $("#no_persons").on("change", function() {
 
     const layout = {
         title: 'Movement Paths',
-        xaxis: { title: 'X position', zeroline: false },
-        yaxis: { title: 'Y position', zeroline: false, scaleanchor: 'x', scaleratio: 1 },
+        xaxis: { title: 'X [m]', zeroline: true },
+        yaxis: { title: 'Y [m]', zeroline: true, scaleanchor: 'x', scaleratio: 1 },
         width: 1750,
         height: 700,
         margin: { l: 70, r: 20, t: 60, b: 60 }
