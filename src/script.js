@@ -1,57 +1,312 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { DragControls } from 'three/addons/controls/DragControls.js';
+import './layout_loader.js';
 
 let no_compartments = 5;
 let no_persons = 2; // Initialize with the default value from your HTML input
 
+// ============================================================================
+// Polygon Bounding Box Class for Non-Rectangular Rooms
+// ============================================================================
+
+/**
+ * PolygonBoundingBox - A custom bounding structure for polygon-shaped compartments
+ * This replaces THREE.Box3 for irregular rooms to provide accurate bounds
+ * @class
+ */
+class PolygonBoundingBox {
+    /**
+     * Creates a new PolygonBoundingBox.
+     * @param {Array<{x: number, y: number}>} outline - An array of 2D points defining the polygon vertices.
+     * @throws {Error} If the outline contains fewer than 3 points.
+     */
+    constructor(outline) {
+        if (!Array.isArray(outline) || outline.length < 3) {
+            throw new Error('PolygonBoundingBox requires at least 3 points');
+        }
+        /** @type {Array<{x: number, y: number}>} */
+        this.outline = outline.map(p => ({ x: Number(p.x), y: Number(p.y) }));
+        this.isPolygonBB = true;
+        
+        // Compute axis-aligned bounds for quick rejection tests
+        const xs = this.outline.map(p => p.x);
+        const ys = this.outline.map(p => p.y);
+        /** @type {THREE.Vector3} The minimum corner of the AABB. */
+        this.min = new THREE.Vector3(Math.min(...xs), Math.min(...ys), 0);
+        /** @type {THREE.Vector3} The maximum corner of the AABB. */
+        this.max = new THREE.Vector3(Math.max(...xs), Math.max(...ys), 0);
+    }
+    
+    /**
+     * Test if a point is contained within the polygon using ray casting
+     * @param {THREE.Vector3} point - The point to test (z-coordinate is ignored for 2D check).
+     * @returns {boolean} True if the point is strictly inside the polygon.
+     */
+    containsPoint(point) {
+        // Quick AABB rejection test first
+        if (point.x < this.min.x || point.x > this.max.x ||
+            point.y < this.min.y || point.y > this.max.y) {
+            return false;
+        }
+        // Detailed point-in-polygon test
+        return pointInPolygon2D(point.x, point.y, this.outline);
+    }
+    
+    /**
+     * Expand the polygon bounds by a scalar value
+     * Creates an offset polygon (simplified implementation)
+     */
+    expandByScalar(offset) {
+        if (offset === 0) return this;
+        
+        // Create a new polygon with expanded AABB bounds
+        // For a more accurate implementation, consider implementing polygon offsetting
+        const expandedOutline = this.outline.map(p => ({
+            x: p.x + (p.x >= 0 ? offset : -offset),
+            y: p.y + (p.y >= 0 ? offset : -offset)
+        }));
+        
+        return new PolygonBoundingBox(expandedOutline);
+    }
+    
+    /**
+     * Clone the polygon bounding box
+     */
+    clone() {
+        return new PolygonBoundingBox(this.outline);
+    }
+    
+    /**
+     * Check intersection with another bounding box (Box3 or PolygonBoundingBox)
+     * @param {THREE.Box3|PolygonBoundingBox} other - The other bounding volume to test against.
+     * @returns {boolean} True if any overlap exists.
+     */
+    intersectsBox(other) {
+        // Quick AABB test first
+        if (this.max.x < other.min.x || this.min.x > other.max.x ||
+            this.max.y < other.min.y || this.min.y > other.max.y) {
+            return false;
+        }
+        
+        // For detailed intersection, check if any vertex of one polygon is inside the other
+        if (other.isPolygonBB) {
+            // Check if any vertex of 'other' is inside 'this'
+            for (const pt of other.outline) {
+                if (this.containsPoint(new THREE.Vector3(pt.x, pt.y, 0))) {
+                    return true;
+                }
+            }
+            // Check if any vertex of 'this' is inside 'other'
+            for (const pt of this.outline) {
+                if (other.containsPoint(new THREE.Vector3(pt.x, pt.y, 0))) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        
+        // If 'other' is a Box3, check its corners against this polygon
+        const corners = [
+            new THREE.Vector3(other.min.x, other.min.y, 0),
+            new THREE.Vector3(other.max.x, other.min.y, 0),
+            new THREE.Vector3(other.max.x, other.max.y, 0),
+            new THREE.Vector3(other.min.x, other.max.y, 0)
+        ];
+        
+        return corners.some(corner => this.containsPoint(corner));
+    }
+    
+    /**
+     * Update the polygon outline (e.g., after dragging)
+     */
+    setFromOutline(outline) {
+        if (!Array.isArray(outline) || outline.length < 3) {
+            console.warn('Invalid outline for PolygonBoundingBox.setFromOutline');
+            return;
+        }
+        this.outline = outline.map(p => ({ x: Number(p.x), y: Number(p.y) }));
+        
+        // Update AABB
+        const xs = this.outline.map(p => p.x);
+        const ys = this.outline.map(p => p.y);
+        this.min.set(Math.min(...xs), Math.min(...ys), 0);
+        this.max.set(Math.max(...xs), Math.max(...ys), 0);
+    }
+}
+
+// ============================================================================
+
 let compartments = [], compartmentsBB = [], compartmentsMeshes = [];
-let animationId, scene, camera, renderer, deck, deckBB, mustering, mustering_inner, MusteringBB;
+let animationId, scene, camera, renderer, deck, deckBB;
+let musteringStations = [], musteringStations_inner = [], musteringStationsBB = [];
 let persons = [], inMES = [];
 let orbitControls, compDragControls, MESdragControls;
 
 let deck_configuration = "simple";
-let mes_x_global, mes_y_global, mes_width, mes_length, deck_length, deck_width;
+let musteringStationsData = []; // Array of {x, y, length, width, name} for all mustering stations
+let deck_length, deck_width;
+let deckMinX = 0, deckMaxX = 0, deckMinY = 0, deckMaxY = 0;
+let deckCenterX = 0, deckCenterY = 0;
 let deltaT = 0;
 const clock = new THREE.Clock();
 let time_step = 0;
 
 let deckArrangement = null;
+let deckOutline = null;         // optional outline when loaded from JSON
 let customInterfaces = [];      // holds parsed interface attributes
 let interfaceMeshes = [];       // mesh instances for cleanup
 let interfaceCompNames = new Set(); 
 
-function loadGeometryFile(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = e => {
-      deckArrangement = JSON.parse(e.target.result);
-      deck_configuration = 'json';
-      // re‐draw with new data
-      resetScene();
-      document.getElementById('radio3').checked = true;
-    };
-    reader.readAsText(file);
-  }
+// Normalize an outline array (supports [{x,y}] or [[x,y]]). Returns [{x,y}] without a duplicate closing point.
+function normalizeOutline(raw) {
+    if (!Array.isArray(raw)) return null;
+    const pts = raw.map((pt) => {
+        if (Array.isArray(pt) && pt.length >= 2) return { x: Number(pt[0]), y: Number(pt[1]) };
+        if (pt && typeof pt === 'object' && 'x' in pt && 'y' in pt) return { x: Number(pt.x), y: Number(pt.y) };
+        return null;
+    }).filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y));
 
-  function initializeConfiguration() {
+    if (pts.length < 3) return null;
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+    if (Math.abs(first.x - last.x) < 1e-9 && Math.abs(first.y - last.y) < 1e-9) {
+        pts.pop();
+    }
+    return pts;
+}
+
+/**
+ * Performs the Ray Casting algorithm (Jordan Curve Theorem) to check point-in-polygon status.
+ * @param {number} px - The X coordinate of the point.
+ * @param {number} py - The Y coordinate of the point.
+ * @param {Array<{x: number, y: number}>} poly - The array of polygon vertices.
+ * @returns {boolean} True if the point is inside the polygon.
+ */
+function pointInPolygon2D(px, py, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const xi = poly[i].x, yi = poly[i].y;
+        const xj = poly[j].x, yj = poly[j].y;
+        const intersect = ((yi > py) !== (yj > py)) &&
+            (px < (xj - xi) * (py - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+    }
+    return inside;
+}
+
+// For polygon rooms we store an *absolute* outline in userData.outline; when dragged, add mesh.position shift.
+function getMeshOutlineGlobal(mesh) {
+    const base = mesh?.userData?.outline;
+    if (!Array.isArray(base) || base.length < 3) return null;
+    const dx = Number(mesh.position?.x || 0);
+    const dy = Number(mesh.position?.y || 0);
+    return base.map((p) => ({ x: Number(p.x) + dx, y: Number(p.y) + dy }));
+}
+
+function isPointInsideCompartmentIndex(position, idx) {
+    const mesh = compartmentsMeshes[idx];
+    if (!mesh) return false;
+
+    const outline = getMeshOutlineGlobal(mesh);
+    if (outline) {
+        return pointInPolygon2D(position.x, position.y, outline);
+    }
+
+    const bb = compartmentsBB[idx];
+    if (!bb) return false;
+    const expanded = bb.clone().expandByScalar(1);
+    return expanded.containsPoint(position);
+}
+
+function getCompartmentIndexAtPoint(position) {
+    for (let i = 0; i < compartmentsMeshes.length; i++) {
+        if (isPointInsideCompartmentIndex(position, i)) return i;
+    }
+    return -1;
+}
+
+// Normalize a deck outline array (supports [{x,y}] or [[x,y]]).
+function parseDeckOutline(deckEntry) {
+    deckOutline = null;
+    if (!deckEntry) return;
+    const raw = deckEntry.outline || deckEntry.attributes?.outline;
+    if (!Array.isArray(raw)) return;
+
+    const points = raw.map((pt) => {
+        if (Array.isArray(pt) && pt.length >= 2) {
+            return { x: Number(pt[0]), y: Number(pt[1]) };
+        }
+        if (pt && typeof pt === 'object' && 'x' in pt && 'y' in pt) {
+            return { x: Number(pt.x), y: Number(pt.y) };
+        }
+        return null;
+    }).filter((pt) => pt && Number.isFinite(pt.x) && Number.isFinite(pt.y));
+
+    if (points.length >= 3) {
+        // If the outline is already closed (last point == first), drop the duplicate end point.
+        const firstPt = points[0];
+        const lastPt = points[points.length - 1];
+        if (Math.abs(firstPt.x - lastPt.x) < 1e-9 && Math.abs(firstPt.y - lastPt.y) < 1e-9) {
+            points.pop();
+        }
+        deckOutline = points;
+    }
+}
+
+// Layout is loaded from JSON in layout_loader.js; this file listens for the load event.
+window.addEventListener('shipEvacuation:geometryLoaded', (event) => {
+    const loaded = event?.detail?.deckArrangement;
+    if (!loaded) return;
+    deckArrangement = loaded;
+    deck_configuration = 'json';
+    // re-draw with new data
+    resetScene();
+    const r3 = document.getElementById('radio3');
+    if (r3) r3.checked = true;
+});
+
+
+function initializeConfiguration() {
+    // Reset outline unless JSON redefines it.
+    deckOutline = null;
+    deckCenterX = 0; deckCenterY = 0;
+    deckMinX = 0; deckMaxX = 0; deckMinY = 0; deckMaxY = 0;
     if (deck_configuration === "simple") {
       no_compartments = 5;
-      mes_x_global  = 105;  
-      mes_y_global  = 17;
-      mes_length    = 5;
-      mes_width     = 10;
+      // Single mustering station for simple mode
+      musteringStationsData = [{
+        x: 105,
+        y: 17,
+        length: 5,
+        width: 10,
+        name: 'MusteringStation'
+      }];
       deck_length   = 105.2;
       deck_width    = 34;
+      deckMinX = -deck_length / 2; deckMaxX = deck_length / 2;
+      deckMinY = -deck_width / 2;  deckMaxY = deck_width / 2;
+      deckCenterX = 0; deckCenterY = 0;
     }
     else if (deck_configuration === "test6") {
       no_compartments = 1;
       deck_length = 12; deck_width = 12;
-      mes_x_global = 11; mes_y_global = 11;
-      mes_length = 2; mes_width = 2;
+      // Single mustering station for test6 mode
+      musteringStationsData = [{
+        x: 11,
+        y: 11,
+        length: 2,
+        width: 2,
+        name: 'MusteringStation'
+      }];
+      deckMinX = -deck_length / 2; deckMaxX = deck_length / 2;
+      deckMinY = -deck_width / 2;  deckMaxY = deck_width / 2;
+      deckCenterX = 0; deckCenterY = 0;
     }
     else if (deck_configuration === "json" && deckArrangement) {
+        // Reset interface-related state for each new JSON load
+        interfaceCompNames.clear();
+        customInterfaces = [];
         // 1) Read deck size from JSON:
         const deckEntry = deckArrangement.arrangements.deck;
         if (deckEntry && deckEntry.attributes) {
@@ -63,16 +318,74 @@ function loadGeometryFile(event) {
           deck_width  = 34;
         }
       
-        // 2) Count compartments (exclude MusteringStation):
-        no_compartments = Object.keys(deckArrangement.arrangements.compartments)
-                                 .filter(k => k !== 'MusteringStation').length;
+        // 2) Count compartments (exclude MusteringStation if it's in compartments):
+        const compartmentKeys = Object.keys(deckArrangement.arrangements.compartments || {});
+        no_compartments = compartmentKeys.filter(k => k !== 'MusteringStation').length;
       
         // 3) Mustering station parameters:
-        const ms = deckArrangement.arrangements.compartments.MusteringStation.attributes;
-        mes_length   = Number(ms.length);
-        mes_width    = Number(ms.width);
-        mes_x_global = Number(ms.x);
-        mes_y_global = Number(ms.y);
+        // Check if musteringStations exists as a separate key (new structure)
+        musteringStationsData = [];
+        
+        if (deckArrangement.arrangements.musteringStations && 
+            Object.keys(deckArrangement.arrangements.musteringStations).length > 0) {
+          // New structure: read all mustering stations from musteringStations
+          const musteringStationKeys = Object.keys(deckArrangement.arrangements.musteringStations);
+          console.log(`Loading ${musteringStationKeys.length} mustering station(s) from musteringStations`);
+          
+          musteringStationKeys.forEach(key => {
+            const ms = deckArrangement.arrangements.musteringStations[key].attributes;
+            musteringStationsData.push({
+              x: Number(ms.x),
+              y: Number(ms.y),
+              length: Number(ms.length),
+              width: Number(ms.width),
+              name: key
+            });
+            console.log(`  - ${key}: x=${ms.x}, y=${ms.y}, L=${ms.length}, W=${ms.width}`);
+          });
+        } else if (deckArrangement.arrangements.compartments?.MusteringStation) {
+          // Old structure: read from compartments.MusteringStation for backward compatibility
+          const ms = deckArrangement.arrangements.compartments.MusteringStation.attributes;
+          musteringStationsData.push({
+            x: Number(ms.x),
+            y: Number(ms.y),
+            length: Number(ms.length),
+            width: Number(ms.width),
+            name: 'MusteringStation'
+          });
+          console.log('Using mustering station from compartments (legacy structure)');
+        } else {
+          console.warn('No mustering station found in JSON; using default values');
+          musteringStationsData.push({
+            x: 0,
+            y: 0,
+            length: 5,
+            width: 10,
+            name: 'MusteringStation_default'
+          });
+        }
+        // Optional complex deck outline (polygon) for JSON decks.
+        parseDeckOutline(deckEntry);
+        if (deckOutline) {
+          const xs = deckOutline.map((p) => p.x);
+          const ys = deckOutline.map((p) => p.y);
+          deckMinX = Math.min(...xs);
+          deckMaxX = Math.max(...xs);
+          deckMinY = Math.min(...ys);
+          deckMaxY = Math.max(...ys);
+          deck_length = deckMaxX - deckMinX;
+          deck_width  = deckMaxY - deckMinY;
+          deckCenterX = 0;
+          deckCenterY = 0;
+        } else {
+          deckOutline = null;
+          deckMinX = Number(deckEntry.attributes.min_x ?? deckEntry.attributes.minX ?? -deck_length / 2);
+          deckMaxX = Number(deckEntry.attributes.max_x ?? deckEntry.attributes.maxX ??  deck_length / 2);
+          deckMinY = Number(deckEntry.attributes.min_y ?? deckEntry.attributes.minY ?? -deck_width / 2);
+          deckMaxY = Number(deckEntry.attributes.max_y ?? deckEntry.attributes.maxY ??  deck_width / 2);
+          deckCenterX = 0;
+          deckCenterY = 0;
+        }
         // 4) Interface definitions (if any):
         const ifaceDefs = deckArrangement.arrangements.interfaces;
         if (ifaceDefs && Object.keys(ifaceDefs).length > 0) {
@@ -107,7 +420,18 @@ function adjustCameraPosition() {
     // Compute the ideal distance so the deck exactly fills the view:
     const requiredZ = (maxDeckSize / 2) / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
     // Increase the distance so the deck occupies only about 60% of the view:
+    const deckCenter = deckBB ? deckBB.getCenter(new THREE.Vector3()) : new THREE.Vector3(0, 0, 0);
+    camera.position.x = deckCenter.x;
+    camera.position.y = deckCenter.y;
     camera.position.z = requiredZ / 1.7;
+    camera.lookAt(deckCenter);
+    if (orbitControls) {
+        orbitControls.target.copy(deckCenter);
+        // sync immediately even when not animating
+        orbitControls.update();
+    }
+    // Ensure the far plane is large enough even if geometry is accidentally in mm
+    camera.far = Math.max(1000, requiredZ * 5);
     camera.updateProjectionMatrix();
 }
 
@@ -127,26 +451,69 @@ function createScene() {
 }
 
 function disposeMeshes(meshes) {
-    meshes.forEach((mesh) => {
-        if (mesh) {
-            scene.remove(mesh);
-            if (mesh.geometry) mesh.geometry.dispose();
-            if (mesh.material) {
-                if (Array.isArray(mesh.material)) mesh.material.forEach((mat) => mat.dispose());
-                else mesh.material.dispose();
+    if (!Array.isArray(meshes)) return;
+
+    const visit = (item) => {
+        if (!item) return;
+        if (Array.isArray(item)) {
+            item.forEach(visit);
+            return;
+        }
+
+        // Only attempt to remove/dispose THREE objects
+        if (scene && typeof scene.remove === 'function') {
+            scene.remove(item);
+        }
+        if (item.geometry && typeof item.geometry.dispose === 'function') {
+            item.geometry.dispose();
+        }
+        if (item.material) {
+            if (Array.isArray(item.material)) {
+                item.material.forEach((mat) => mat && mat.dispose && mat.dispose());
+            } else if (item.material.dispose) {
+                item.material.dispose();
             }
         }
-    });
+    };
+
+    meshes.forEach(visit);
 }
 
 function createDeck() {
-    deck = new THREE.Mesh(
-        new THREE.BoxGeometry(deck_length, deck_width, 0.02),
-        new THREE.MeshBasicMaterial({ color: 'lightblue' })
-    );
-    deck.position.z = 0;
-    deckBB = new THREE.Box3().setFromObject(deck);
-    scene.add(deck);
+    const deckColor = (deck_configuration === 'json' && deckArrangement?.arrangements?.deck?.attributes?.color)
+        ? deckArrangement.arrangements.deck.attributes.color
+        : 'lightblue';
+    // For JSON-uploaded decks, draw the provided polygon outline; fallback to box for other modes.
+    if (deck_configuration === 'json' && deckOutline && deckOutline.length >= 3) {
+        const shape = new THREE.Shape();
+        const first = deckOutline[0];
+        shape.moveTo(first.x, first.y);
+        for (let i = 1; i < deckOutline.length; i++) {
+            const pt = deckOutline[i];
+            shape.lineTo(pt.x, pt.y);
+        }
+        shape.closePath();
+
+        const geometry = new THREE.ExtrudeGeometry(shape, {
+            depth: 0.02,
+            bevelEnabled: false
+        });
+        deck = new THREE.Mesh(
+            geometry,
+            new THREE.MeshBasicMaterial({ color: deckColor, side: THREE.DoubleSide })
+        );
+        deck.position.z = 0;
+        deckBB = new THREE.Box3().setFromObject(deck);
+        scene.add(deck);
+    } else {
+        deck = new THREE.Mesh(
+            new THREE.BoxGeometry(deck_length, deck_width, 0.02),
+            new THREE.MeshBasicMaterial({ color: deckColor, side: THREE.DoubleSide })
+        );
+        deck.position.z = 0;
+        deckBB = new THREE.Box3().setFromObject(deck);
+        scene.add(deck);
+    }
 }
 
 function getCompartmentConfiguration(config) {
@@ -190,57 +557,169 @@ function getCompartmentConfiguration(config) {
 }
 
 function createCompartments() {
-    const config = getCompartmentConfiguration(deck_configuration);
     compartments = [];
     compartmentsBB = [];
-    compartmentsMeshes = []; 
+    compartmentsMeshes = [];
 
+    // JSON mode: build each room as either a Box (rectangle) or an extruded polygon
+    if (deck_configuration === 'json' && deckArrangement?.arrangements?.compartments) {
+        const comps = deckArrangement.arrangements.compartments;
+        const keys = Object.keys(comps).filter(k => k !== 'MusteringStation');
+        no_compartments = keys.length;
+
+        keys.forEach((name) => {
+            const attrs = comps[name]?.attributes || {};
+            const color = attrs.color || 'yellow';
+            const height = Number(attrs.height ?? 2);
+            const zCenter = Number(attrs.z ?? 1);
+            const rotDeg = Number(attrs.rotation ?? 0);
+            const shapeType = String(attrs.shape || '').toLowerCase();
+            const outline = normalizeOutline(attrs.outline);
+
+            let mesh;
+
+            if (outline && (shapeType === 'polygon' || shapeType === '')) {
+                // Polygon footprint in absolute deck coordinates.
+                const shape = new THREE.Shape();
+                shape.moveTo(outline[0].x, outline[0].y);
+                for (let i = 1; i < outline.length; i++) {
+                    shape.lineTo(outline[i].x, outline[i].y);
+                }
+                shape.closePath();
+
+                const geom = new THREE.ExtrudeGeometry(shape, {
+                    depth: height,
+                    bevelEnabled: false
+                });
+
+                mesh = new THREE.Mesh(
+                    geom,
+                    new THREE.MeshBasicMaterial({
+                        color: color,
+                        transparent: true,
+                        opacity: 0.3,
+                        side: THREE.DoubleSide
+                    })
+                );
+
+                // ExtrudeGeometry spans z=[0..height], so shift to match zCenter as the mesh center.
+                mesh.position.set(0, 0, zCenter - height / 2);
+
+                // Store absolute outline for plotting + point-in-room tests
+                mesh.userData.outline = outline;
+                mesh.userData.shape = 'polygon';
+                mesh.userData.zCenter = zCenter;
+                mesh.userData.height = height;
+
+                // IMPORTANT: do NOT apply attrs.rotation here; the polygon is already in global coordinates.
+            } else {
+                // Rectangle (default)
+                const L = Number(attrs.length ?? 1);
+                const W = Number(attrs.width ?? 1);
+
+                mesh = new THREE.Mesh(
+                    new THREE.BoxGeometry(L, W, height),
+                    new THREE.MeshBasicMaterial({
+                        color: color,
+                        transparent: true,
+                        opacity: 0.3
+                    })
+                );
+                mesh.position.set(Number(attrs.x ?? 0), Number(attrs.y ?? 0), zCenter);
+                mesh.rotation.z = (Math.PI * rotDeg) / 180.0;
+                mesh.userData.shape = 'rectangle';
+                mesh.userData.zCenter = zCenter;
+                mesh.userData.height = height;
+            }
+
+            mesh.name = name;
+            scene.add(mesh);
+            compartmentsMeshes.push(mesh);
+            
+            // Use PolygonBoundingBox for polygon rooms, THREE.Box3 for rectangular rooms
+            if (outline && (shapeType === 'polygon' || shapeType === '')) {
+                compartmentsBB.push(new PolygonBoundingBox(outline));
+            } else {
+                compartmentsBB.push(new THREE.Box3().setFromObject(mesh));
+            }
+        });
+
+        return;
+    }
+
+    // Non-JSON modes: keep the legacy box-based compartments
+    const config = getCompartmentConfiguration(deck_configuration);
     for (let i = 0; i < no_compartments; i++) {
         const color = config.comp_color && config.comp_color[i] ? config.comp_color[i] : 'yellow';
 
         const compartment = new THREE.Mesh(
             new THREE.BoxGeometry(config.comp_length[i], config.comp_width[i], config.comp_height[i]),
             new THREE.MeshBasicMaterial({
-                color: color,        // <-- USE JSON COLOR
+                color: color,
                 transparent: true,
                 opacity: 0.3
-             })
+            })
         );
         compartment.position.set(config.comp_x[i], config.comp_y[i], 1);
         compartment.rotation.z = (Math.PI * config.compy_angle[i]) / 180.0;
-        scene.add(compartment);
+        compartment.userData.shape = 'rectangle';
+        compartment.userData.zCenter = 1;
+        compartment.userData.height = Number(config.comp_height[i] ?? 2);
 
-        if (deck_configuration === 'json' && deckArrangement) {
-            // we need the name so we can look up interfaces later
-            const compNames = Object
-              .keys(deckArrangement.arrangements.compartments)
-              .filter(k => k !== 'MusteringStation');
-            compartment.name = compNames[i];
-        }
+        scene.add(compartment);
         compartmentsMeshes.push(compartment);
         compartmentsBB.push(new THREE.Box3().setFromObject(compartment));
     }
 }
 
 function addMusteringStation() {
-    mustering = new THREE.Mesh(
-        new THREE.BoxGeometry(mes_length, mes_width, 2.5),
-        new THREE.MeshBasicMaterial({ color: 'red', opacity: 0.5, transparent: true })
-    );
-    mustering.position.set(
-        mes_x_global - deck_length/2,
-        mes_y_global - deck_width/2,
-        0
-      );
-
-    mustering_inner = new THREE.Mesh(
-        new THREE.BoxGeometry(mes_length - 1, mes_width - 1, 2.5),
-        new THREE.MeshBasicMaterial({ color: 'red', opacity: 0.5, transparent: true })
-    );
-    mustering_inner.position.copy(mustering.position);
-    MusteringBB = new THREE.Box3().setFromObject(mustering_inner);
-
-    scene.add(mustering);
+    const offsetX = deck_configuration === 'json' ? 0 : deck_length / 2;
+    const offsetY = deck_configuration === 'json' ? 0 : deck_width / 2;
+    
+    // Clear existing mustering stations
+    musteringStations.forEach(mesh => scene.remove(mesh));
+    musteringStations_inner.forEach(mesh => scene.remove(mesh));
+    musteringStations = [];
+    musteringStations_inner = [];
+    musteringStationsBB = [];
+    
+    // Create mesh for each mustering station
+    musteringStationsData.forEach((msData, index) => {
+        // Outer mesh (semi-transparent)
+        const mustering = new THREE.Mesh(
+            new THREE.BoxGeometry(msData.length, msData.width, 2.5),
+            new THREE.MeshBasicMaterial({ color: 'red', opacity: 0.5, transparent: true })
+        );
+        mustering.position.set(
+            msData.x - offsetX,
+            msData.y - offsetY,
+            0
+        );
+        mustering.name = msData.name;
+        
+        // Inner mesh (for collision detection)
+        const mustering_inner = new THREE.Mesh(
+            new THREE.BoxGeometry(msData.length - 1, msData.width - 1, 2.5),
+            new THREE.MeshBasicMaterial({ color: 'red', opacity: 0.5, transparent: true })
+        );
+        mustering_inner.position.copy(mustering.position);
+        mustering_inner.name = msData.name + '_inner';
+        
+        // Bounding box
+        const musteringBB = new THREE.Box3().setFromObject(mustering_inner);
+        
+        // Store in arrays
+        musteringStations.push(mustering);
+        musteringStations_inner.push(mustering_inner);
+        musteringStationsBB.push(musteringBB);
+        
+        // Add to scene
+        scene.add(mustering);
+        
+        console.log(`Created mustering station ${index}: ${msData.name} at (${msData.x}, ${msData.y})`);
+    });
+    
+    console.log(`Total ${musteringStations.length} mustering station(s) created`);
 }
 
 /**
@@ -251,6 +730,8 @@ function createInterfaces() {
     // first, remove any old interface meshes
     disposeMeshes(interfaceMeshes);
     interfaceMeshes = [];
+    const offsetX = deck_configuration === 'json' ? 0 : deck_length / 2;
+    const offsetY = deck_configuration === 'json' ? 0 : deck_width / 2;
   
     customInterfaces.forEach(iface => {
       const { x, y, z, width, height, thickness = 0.1, type } = iface;
@@ -263,8 +744,8 @@ function createInterfaces() {
       const mesh = new THREE.Mesh(geom, mat);
       // JSON coords are absolute; shift so deck is centered at (0,0)
       mesh.position.set(
-        x - deck_length/2,
-        y - deck_width/2,
+        x - offsetX,
+        y - offsetY,
         z + thickness/2
       );
       scene.add(mesh);
@@ -301,7 +782,8 @@ function setupOrbitControls() {
   orbitControls = new OrbitControls(camera, renderer.domElement);
   orbitControls.enableDamping = true;
   orbitControls.dampingFactor = 0.1;
-  orbitControls.target.set(0, 0, 0);
+  const tgt = deckBB ? deckBB.getCenter(new THREE.Vector3()) : new THREE.Vector3(0, 0, 0);
+  orbitControls.target.copy(tgt);
   // Default mode: rotation enabled.
   orbitControls.enabled = true;
   return orbitControls;
@@ -313,13 +795,27 @@ function setupDragControls() {
     if (MESdragControls) MESdragControls.dispose();
 
     compDragControls = new DragControls(compartmentsMeshes, camera, renderer.domElement);
-    // While dragging, force compartments to remain at z = 1.
+    // While dragging, keep each compartment at its intended z centre.
     compDragControls.addEventListener('drag', (event) => {
-        event.object.position.z = 1;
+        const obj = event.object;
+        const zc = Number(obj?.userData?.zCenter ?? 1);
+        const h  = Number(obj?.userData?.height ?? 0);
+        if (obj?.userData?.shape === 'polygon') obj.position.z = zc - h / 2;
+        else obj.position.z = zc;
     });
     compDragControls.addEventListener('dragend', () => {
         compartmentsMeshes.forEach((mesh, i) => {
-            compartmentsBB[i].setFromObject(mesh);
+            const bb = compartmentsBB[i];
+            
+            if (bb && bb.isPolygonBB) {
+                // For polygon rooms, update the outline with the new position
+                const outline = getMeshOutlineGlobal(mesh);
+                if (outline) {
+                    bb.setFromOutline(outline);
+                }
+            } else if (bb) {
+                bb.setFromObject(mesh);
+            }
         });
         cancelAnimationFrame(animationId);
         disposePersons();
@@ -328,14 +824,23 @@ function setupDragControls() {
         document.getElementById("startSim").disabled = false;
     });
 
-    MESdragControls = new DragControls([mustering], camera, renderer.domElement);
+    MESdragControls = new DragControls(musteringStations, camera, renderer.domElement);
     // While dragging, force the mustering station to remain at z = 0.
     MESdragControls.addEventListener('drag', (event) => {
         event.object.position.z = 0;
+        // Find the index of the dragged mustering station and update its inner mesh
+        const index = musteringStations.indexOf(event.object);
+        if (index !== -1 && musteringStations_inner[index]) {
+            musteringStations_inner[index].position.copy(event.object.position);
+        }
     });
     MESdragControls.addEventListener('dragend', (event) => {
-        mustering_inner.position.copy(event.object.position);
-        MusteringBB.setFromObject(mustering_inner);
+        // Find the index of the dragged mustering station
+        const index = musteringStations.indexOf(event.object);
+        if (index !== -1) {
+            musteringStations_inner[index].position.copy(event.object.position);
+            musteringStationsBB[index].setFromObject(musteringStations_inner[index]);
+        }
         cancelAnimationFrame(animationId);
         disposePersons();
         createPersons(no_persons);
@@ -369,13 +874,24 @@ function setupControlKeyListeners() {
   });
 }
 
+/**
+ * Represents a person/agent in the evacuation simulation.
+ * @class
+ */
 class Human {
+    /**
+     * @param {number} id - Unique identifier for the person.
+     * @param {number} speed - Movement speed in m/s.
+     * @param {string|number} color - Hex color for the agent mesh.
+     */
     constructor(id, speed, color) {
         this.geometry = new THREE.Mesh(
             new THREE.BoxGeometry(0.5, 0.5, 1.8),
             new THREE.MeshBasicMaterial({ color })
         );
+        /** @type {number} Movement speed scalar. */
         this.speed = speed;
+        /** @type {THREE.Box3} Axis-aligned bounding box for the agent. */
         this.BB = new THREE.Box3().setFromObject(this.geometry);
         this.movingUp = Math.random() < 0.5;
         this.stuckCount = 0;
@@ -385,8 +901,11 @@ class Human {
         this.time = [];
         this.dist = 0;
         scene.add(this.geometry);
+        /** @type {boolean} State flag indicating if the agent has exited a room via an interface. */
         this.hasReachedInterface = false;
+        /** @type {?number} The index of the compartment the agent starts in. */
         this.currentCompartmentIndex = null;     // directMovement can ignore the right room
+        this.targetMusteringStationIndex = 0;    // Index of the nearest mustering station
     }
 }
 
@@ -406,17 +925,54 @@ function getRandomPositionOnLimitedArea(limits) {
 
 // Check if a given position is inside any compartment, using an expanded bounding box
 function isPositionInsideAnyCompartment(position) {
-    return compartmentsBB.some(bb => {
-        const expandedBB = bb.clone().expandByScalar(1);
-        return expandedBB.containsPoint(position);
-    });
+    return getCompartmentIndexAtPoint(position) >= 0;
 }
 
 // Check if a position is inside the mustering station, using an expanded bounding box
+// Uses the first mustering station (index 0) as the target for evacuation
 function isPositionInMusteringStation(position) {
-    if (!MusteringBB) return false;
-    const expandedBB = MusteringBB.clone().expandByScalar(1);
+    if (!musteringStationsBB || musteringStationsBB.length === 0) return false;
+    const expandedBB = musteringStationsBB[0].clone().expandByScalar(1);
     return expandedBB.containsPoint(position);
+}
+
+// Find the index of the nearest mustering station to a given position
+function findNearestMusteringStation(position) {
+    if (!musteringStations_inner || musteringStations_inner.length === 0) return 0;
+    
+    let nearestIndex = 0;
+    let minDistance = Infinity;
+    
+    musteringStations_inner.forEach((station, index) => {
+        const dx = station.position.x - position.x;
+        const dy = station.position.y - position.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance < minDistance) {
+            minDistance = distance;
+            nearestIndex = index;
+        }
+    });
+    
+    return nearestIndex;
+}
+
+// Determine if a point lies within the current deck (polygon-aware for JSON uploads).
+function isPointInsideDeck(position) {
+    if (deck_configuration === 'json' && deckOutline && deckOutline.length >= 3) {
+        const px = position.x;
+        const py = position.y;
+        let inside = false;
+        for (let i = 0, j = deckOutline.length - 1; i < deckOutline.length; j = i++) {
+            const xi = deckOutline[i].x, yi = deckOutline[i].y;
+            const xj = deckOutline[j].x, yj = deckOutline[j].y;
+            const intersect = ((yi > py) !== (yj > py)) &&
+                (px < (xj - xi) * (py - yi) / (yj - yi) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    }
+    return deckBB ? deckBB.containsPoint(position) : false;
 }
 
 function createPersons(num) {
@@ -474,6 +1030,7 @@ function createPersons(num) {
               break;
             }
           } while (
+            !isPointInsideDeck(candidate) ||
             isPositionInsideAnyCompartment(candidate) ||
             isPositionInMusteringStation(candidate)
           );
@@ -496,8 +1053,11 @@ function createPersons(num) {
               // 2) …and that compartment’s name must be in our interfaceCompNames
               ![...interfaceCompNames].some(name => {
                 const idx = compartmentsMeshes.findIndex(m => m.name === name);
-                return idx >= 0 && compartmentsBB[idx].containsPoint(candidate);
+                return idx >= 0 && isPointInsideCompartmentIndex(candidate, idx);
               })
+              ||
+              // 3) must also sit on the deck outline
+              !isPointInsideDeck(candidate)
             );
           } else {
             // ► JSON without interfaces (or Persons 1+) fall back to “deck only”
@@ -509,6 +1069,7 @@ function createPersons(num) {
                 break;
               }
             } while (
+              !isPointInsideDeck(candidate) ||
               isPositionInsideAnyCompartment(candidate) ||
               isPositionInMusteringStation(candidate)
             );
@@ -520,18 +1081,32 @@ function createPersons(num) {
             attempts++;
             if (attempts > 1000) { break; }
           } while (
+            !isPointInsideDeck(candidate) ||
             isPositionInsideAnyCompartment(candidate) ||
             isPositionInMusteringStation(candidate)
           );
         }
         human.geometry.position.copy(candidate);
+        // Assign the nearest mustering station to this person
+        human.targetMusteringStationIndex = findNearestMusteringStation(candidate);
+        console.log(`Person ${i} assigned to mustering station ${human.targetMusteringStationIndex}`);
         return human;
     });
 }
 
+/**
+ * Calculates and applies movement for an agent directly toward a target (Mustering Station).
+ * Implements collision detection and simple obstacle avoidance.
+ * Scientific Basis: Calculates displacement vector d = v * deltaT.
+ * @param {Human} person - The agent object to move.
+ * @param {number} i - The index of the agent in the global array.
+ */
 function directMovement(person,i) {
-    const deltaX = mustering_inner.position.x - person.geometry.position.x;
-    const deltaY = mustering_inner.position.y - person.geometry.position.y;
+    // Move toward the person's assigned mustering station
+    if (!musteringStations_inner || musteringStations_inner.length === 0) return;
+    const targetIndex = person.targetMusteringStationIndex || 0;
+    const deltaX = musteringStations_inner[targetIndex].position.x - person.geometry.position.x;
+    const deltaY = musteringStations_inner[targetIndex].position.y - person.geometry.position.y;
     const angle = Math.atan2(deltaY, deltaX);
     const move = deltaT * person.speed;
 
@@ -544,13 +1119,13 @@ function directMovement(person,i) {
         // ignore the wall of the compartment you’re currently inside—
         // so you can actually step through the opening
         if (idx === person.currentCompartmentIndex
-            && bb.containsPoint(person.geometry.position)) {
+            && isPointInsideCompartmentIndex(person.geometry.position, idx)) {
             return false;
         }
         return bb.intersectsBox(newBB);
     });
 
-    if (!collision && deckBB.containsPoint(newPos)) {
+    if (!collision && isPointInsideDeck(newPos)) {
         person.geometry.position.copy(newPos);
         person.BB.setFromObject(person.geometry);
         // Update accumulated distance:
@@ -563,7 +1138,7 @@ function directMovement(person,i) {
         const verticalMove = person.movingUp ? move : -move;
         const testPos = person.geometry.position.clone().add(new THREE.Vector3(0, verticalMove, 0));
         const testBB = new THREE.Box3().setFromObject(person.geometry).translate(new THREE.Vector3(0, verticalMove, 0));
-        if (!compartmentsBB.some((bb) => bb.intersectsBox(testBB)) && deckBB.containsPoint(testPos)) {
+        if (!compartmentsBB.some((bb) => bb.intersectsBox(testBB)) && isPointInsideDeck(testPos)) {
             person.geometry.position.copy(testPos);
         } else {
             person.stuckCount++;
@@ -575,21 +1150,32 @@ function directMovement(person,i) {
     }
 
     // Record the new position and time:
-    person.x.push(person.geometry.position.x + deck_length / 2);
+    person.x.push(deck_configuration === 'json' ? person.geometry.position.x : (person.geometry.position.x + deck_length / 2));
     person.y.push(person.geometry.position.y);
     person.time.push(time_step);
     person.BB.setFromObject(person.geometry);
     document.getElementById("movment" + String(i + 1)).innerText = person.dist.toFixed(2);
-    if (MusteringBB.intersectsBox(person.BB)) {
+    // Check if person has reached their assigned mustering station
+    if (musteringStationsBB.length > targetIndex && musteringStationsBB[targetIndex].intersectsBox(person.BB)) {
         inMES[i] = 1;
     }
 }
 
+/**
+ * Handles hierarchical pathfinding for agents inside compartments with defined interfaces (doors).
+ * Logic Flow:
+ * 1. Identify which compartment the agent is in.
+ * 2. Find the associated interface (door) connecting to 'deck'.
+ * 3. Steer agent toward the door.
+ * 4. Once the door is reached, switch state to 'directMovement' toward the Mustering Station.
+ * @param {Human} person - The agent object.
+ * @param {number} i - The index of the agent.
+ */
 function interfaceAwareMovement(person, i) {
     // 1) Figure out which compartment they’re in
-    const compIndex = compartmentsBB.findIndex(bb => bb.containsPoint(person.geometry.position));
+    const compIndex = getCompartmentIndexAtPoint(person.geometry.position);
     person.currentCompartmentIndex = compIndex;
-    const compName  = compartmentsMeshes[compIndex]?.name;
+    const compName  = (compIndex >= 0) ? compartmentsMeshes[compIndex]?.name : null;
     if (!compName) {
       directMovement(person, i);
       return;
@@ -608,8 +1194,8 @@ function interfaceAwareMovement(person, i) {
     }
   
     // 3) Compute the door’s position (JSON coords are deck-centered)
-    const targetX = iface.x - deck_length/2;
-    const targetY = iface.y - deck_width/2;
+    const targetX = deck_configuration === 'json' ? iface.x : (iface.x - deck_length/2);
+    const targetY = deck_configuration === 'json' ? iface.y : (iface.y - deck_width/2);
     // if we’re close enough to the door, switch to mustering logic
     const distToDoor = person.geometry.position.distanceTo(
       new THREE.Vector3(targetX, targetY, person.geometry.position.z)
@@ -618,15 +1204,15 @@ function interfaceAwareMovement(person, i) {
       person.hasReachedInterface = true;   // NEW
       return;                              // leave the room this frame
     }
-    // 4) Temporarily steer ‘mustering_inner’ to the door…
-    const oldPos = mustering_inner.position.clone();
-    mustering_inner.position.set(targetX, targetY, oldPos.z);
+    // 4) Temporarily steer the person's assigned mustering station to the door...
+    const oldPos = musteringStations_inner[person.targetMusteringStationIndex || 0].position.clone();
+    musteringStations_inner[person.targetMusteringStationIndex || 0].position.set(targetX, targetY, oldPos.z);
   
     // 5) Reuse your directMovement logic to navigate to the door
     directMovement(person, i);
   
     // 6) Restore the real mustering station
-    mustering_inner.position.copy(oldPos);
+    musteringStations_inner[person.targetMusteringStationIndex || 0].position.copy(oldPos);
   }
 
 
@@ -663,9 +1249,7 @@ function interfaceAwareMovement(person, i) {
           // 2b) Interfaces exist → decide based on room membership
           if (!person.hasReachedInterface) {
             // still need to exit your room
-            const insideRoom = compartmentsBB.some(bb =>
-              bb.containsPoint(person.geometry.position)
-            );
+            const insideRoom = (getCompartmentIndexAtPoint(person.geometry.position) >= 0);
             if (insideRoom) {
               interfaceAwareMovement(person, i);
             } else {
@@ -703,8 +1287,8 @@ function resetScene() {
     disposePersons();
     disposeMeshes([
         ...compartmentsMeshes,
-        mustering,
-        mustering_inner,
+        ...musteringStations,
+        ...musteringStations_inner,
         deck,
         persons.map((p) => p.geometry),
         interfaceMeshes
@@ -779,14 +1363,9 @@ document.querySelectorAll('input[name="options"]').forEach((radio) => {
         document.getElementById("startSim").disabled = false;
         document.getElementById("plotFigure").disabled = true;
         document.getElementById("saveResultCSV").disabled = true;
-        document.getElementById("saveResultJSON").disabled
+        document.getElementById("saveResultJSON").disabled = true;
     });
 });
-
-
-
-init();
-
 $("#no_persons").on("change", function() {
     // keep our JS var in sync
     no_persons = Number(this.value) || 0;
@@ -810,39 +1389,197 @@ $("#no_persons").on("change", function() {
     // Make sure the graph container is visible.
     document.getElementById("movment2D").style.display = "block";
 
-    // Prepare the data for all persons.
-    let TESTER = document.getElementById('movment2D');
-    var data = [];
+    const isJson = (deck_configuration === 'json');
+    const xShift = isJson ? 0 : (deck_length / 2);   // persons.x for non-JSON is stored as x_local + deck_length/2
+    const yShift = 0;
+
+    function rectCorners2D(cx, cy, L, W, rotRad) {
+        const hx = L / 2;
+        const hy = W / 2;
+        const pts = [
+            { x: -hx, y: -hy },
+            { x:  hx, y: -hy },
+            { x:  hx, y:  hy },
+            { x: -hx, y:  hy }
+        ];
+        const c = Math.cos(rotRad);
+        const s = Math.sin(rotRad);
+        const xs = [];
+        const ys = [];
+        for (const p of pts) {
+            const xr = p.x * c - p.y * s;
+            const yr = p.x * s + p.y * c;
+            xs.push(cx + xr);
+            ys.push(cy + yr);
+        }
+        // close polygon
+        xs.push(xs[0]);
+        ys.push(ys[0]);
+        return { xs, ys };
+    }
+
+    function buildDeckOutlineTrace() {
+        let xs = [];
+        let ys = [];
+
+        if (isJson && Array.isArray(deckOutline) && deckOutline.length >= 3) {
+            xs = deckOutline.map(p => Number(p.x));
+            ys = deckOutline.map(p => Number(p.y));
+            // If the outline is already closed (last point == first), drop the last point to avoid a double-close in the plot
+            if (xs.length >= 2 && xs[0] === xs[xs.length - 1] && ys[0] === ys[ys.length - 1]) {
+                xs = xs.slice(0, -1);
+                ys = ys.slice(0, -1);
+            }
+        } else {
+            // local (centered) rectangle, then apply xShift to match stored person.x
+            xs = [-deck_length/2,  deck_length/2,  deck_length/2, -deck_length/2];
+            ys = [-deck_width /2, -deck_width /2,  deck_width /2,  deck_width /2];
+        }
+
+        // close
+        xs = xs.concat(xs[0]);
+        ys = ys.concat(ys[0]);
+
+        // apply plot shift for non-JSON decks
+        xs = xs.map(v => v + xShift);
+        ys = ys.map(v => v + yShift);
+
+        return {
+            x: xs,
+            y: ys,
+            mode: 'lines',
+            name: 'Deck outline',
+            showlegend: false,
+            line: { width: 2 }
+        };
+    }
+    function buildRoomTraces() {
+        const traces = [];
+        if (!Array.isArray(compartmentsMeshes) || compartmentsMeshes.length === 0) return traces;
+
+        compartmentsMeshes.forEach((mesh, idx) => {
+            if (!mesh) return;
+
+            // Polygon rooms
+            const outline = getMeshOutlineGlobal(mesh);
+            if (outline && outline.length >= 3) {
+                let xs = outline.map(p => Number(p.x));
+                let ys = outline.map(p => Number(p.y));
+                xs = xs.concat(xs[0]);
+                ys = ys.concat(ys[0]);
+
+                traces.push({
+                    x: xs.map(v => v + xShift),
+                    y: ys.map(v => v + yShift),
+                    mode: 'lines',
+                    name: mesh.name ? `Room: ${mesh.name}` : `Room ${idx + 1}`,
+                    showlegend: false,
+                    line: { width: 1 },
+                    fill: 'toself',
+                    fillcolor: 'rgba(0, 0, 255, 0.10)'
+                });
+                return;
+            }
+
+            // Rectangle rooms
+            if (!mesh.geometry || !mesh.position) return;
+            const params = mesh.geometry.parameters || {};
+            const L = Number(params.width);
+            const W = Number(params.height);
+            if (!Number.isFinite(L) || !Number.isFinite(W)) return;
+
+            const cx = Number(mesh.position.x);
+            const cy = Number(mesh.position.y);
+            const rot = Number(mesh.rotation?.z || 0);
+
+            const { xs, ys } = rectCorners2D(cx, cy, L, W, rot);
+
+            traces.push({
+                x: xs.map(v => v + xShift),
+                y: ys.map(v => v + yShift),
+                mode: 'lines',
+                name: mesh.name ? `Room: ${mesh.name}` : `Room ${idx + 1}`,
+                showlegend: false,
+                line: { width: 1 },
+                fill: 'toself',
+                fillcolor: 'rgba(0, 0, 255, 0.10)'
+            });
+        });
+
+        return traces;
+    }
+
+    function buildMusteringTraces() {
+        const traces = [];
+        if (!musteringStations_inner || musteringStations_inner.length === 0) return traces;
+        
+        musteringStations_inner.forEach((mustering_inner, idx) => {
+            if (!mustering_inner || !mustering_inner.geometry || !mustering_inner.position) return;
+            const params = mustering_inner.geometry.parameters || {};
+            const L = Number(params.width);
+            const W = Number(params.height);
+            if (!Number.isFinite(L) || !Number.isFinite(W)) return;
+
+            const cx = Number(mustering_inner.position.x);
+            const cy = Number(mustering_inner.position.y);
+            const rot = Number(mustering_inner.rotation?.z || 0);
+
+            const { xs, ys } = rectCorners2D(cx, cy, L, W, rot);
+
+            traces.push({
+                x: xs.map(v => v + xShift),
+                y: ys.map(v => v + yShift),
+                mode: 'lines',
+                name: mustering_inner.name || `Mustering station ${idx + 1}`,
+                showlegend: false,
+                line: { width: 2 },
+                fill: 'toself',
+                fillcolor: 'rgba(255, 0, 0, 0.10)'
+            });
+        });
+        
+        return traces;
+    }
+
+    // Assemble traces: deck + rooms + mustering + persons
+    const data = [];
+    data.push(buildDeckOutlineTrace());
+    data.push(...buildRoomTraces());
+    data.push(...buildMusteringTraces());
+
     for (let i = 0; i < no_persons; i++) {
+        if (!persons[i] || !Array.isArray(persons[i].x)) continue;
         data.push({
             x: persons[i].x,
             y: persons[i].y,
             mode: 'lines',
-            lines: { width: 4 },
+            line: { width: 4 },   // <-- Plotly uses "line", not "lines"
             name: 'person ' + String(i + 1)
         });
     }
 
-    // Create the plot.
-    var layout = {
-    title: 'Movement Paths',
-    xaxis: { title: 'X position' },
-    yaxis: { title: 'Y position' },
-    width: 1750,   // higher width
-    height: 700,  // higher height
-};
+    const layout = {
+        title: 'Movement Paths',
+        xaxis: { title: 'X position', zeroline: false },
+        yaxis: { title: 'Y position', zeroline: false, scaleanchor: 'x', scaleratio: 1 },
+        width: 1750,
+        height: 700,
+        margin: { l: 70, r: 20, t: 60, b: 60 }
+    };
 
-var config = {
-    responsive: true,
-    displaylogo: false,
-    toImageButtonOptions: {
-        format: 'png',
-        filename: 'high_res_plot',
-        height: 1400,  // set higher for better DPI
-        width: 3500,
-        scale: 4       // scale multiplies width/height and improves DPI
-    }
-};
+    const config = {
+        responsive: true,
+        displaylogo: false,
+        toImageButtonOptions: {
+            format: 'png',
+            filename: 'high_res_plot',
+            height: 1400,
+            width: 3500,
+            scale: 4
+        }
+    };
+
+        const TESTER = document.getElementById('movment2D');
 
     Plotly.newPlot(TESTER, data, layout, config);
 });
@@ -864,12 +1601,3 @@ $("#saveResultCSV").on("click", function() {
 $("#saveResultJSON").on("click", function() {
 
 });
-
-window.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('geometryFileInput')
-            .addEventListener('change', loadGeometryFile);
-  });
-
-  if (typeof window !== 'undefined') {
-    window.loadGeometryFile = loadGeometryFile;
-  }
