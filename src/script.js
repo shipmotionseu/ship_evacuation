@@ -377,8 +377,7 @@ function initializeConfiguration() {
           deck_width  = deckMaxY - deckMinY;
           deckCenterX = (deckMinX + deckMaxX) / 2;
           deckCenterY = (deckMinY + deckMaxY) / 2;
-          // Convert deck outline from ship coordinates to scene coordinates (deck centered at 0,0)
-          deckOutline = deckOutline.map(p => ({ x: Number(p.x) - deckCenterX, y: Number(p.y) - deckCenterY }));
+          // Keep deck outline in ship coordinates (classic ship-design coordinate system).
         } else {
           deckOutline = null;
           deckMinX = Number(deckEntry.attributes.min_x ?? deckEntry.attributes.minX ?? -deck_length / 2);
@@ -576,10 +575,7 @@ function createCompartments() {
             const zCenter = Number(attrs.z ?? 1);
             const rotDeg = Number(attrs.rotation ?? 0);
             const shapeType = String(attrs.shape || '').toLowerCase();
-            const outlineShip = normalizeOutline(attrs.outline);
-            const outline = (outlineShip && outlineShip.length >= 3)
-                ? outlineShip.map(p => ({ x: Number(p.x) - deckCenterX, y: Number(p.y) - deckCenterY }))
-                : null;
+            const outline = normalizeOutline(attrs.outline);
 
             let mesh;
 
@@ -630,7 +626,7 @@ function createCompartments() {
                         opacity: 0.3
                     })
                 );
-                mesh.position.set(Number(attrs.x ?? 0) - deckCenterX, Number(attrs.y ?? 0) - deckCenterY, zCenter);
+                mesh.position.set(Number(attrs.x ?? 0), Number(attrs.y ?? 0), zCenter);
                 mesh.rotation.z = (Math.PI * rotDeg) / 180.0;
                 mesh.userData.shape = 'rectangle';
                 mesh.userData.zCenter = zCenter;
@@ -678,8 +674,8 @@ function createCompartments() {
 }
 
 function addMusteringStation() {
-    const offsetX = deck_configuration === 'json' ? deckCenterX : deck_length / 2;
-    const offsetY = deck_configuration === 'json' ? deckCenterY : deck_width / 2;
+    const offsetX = deck_configuration === 'json' ? 0 : deck_length / 2;
+    const offsetY = deck_configuration === 'json' ? 0 : deck_width / 2;
     
     // Clear existing mustering stations
     musteringStations.forEach(mesh => scene.remove(mesh));
@@ -735,8 +731,8 @@ function createInterfaces() {
     // first, remove any old interface meshes
     disposeMeshes(interfaceMeshes);
     interfaceMeshes = [];
-    const offsetX = deck_configuration === 'json' ? deckCenterX : deck_length / 2;
-    const offsetY = deck_configuration === 'json' ? deckCenterY : deck_width / 2;
+    const offsetX = deck_configuration === 'json' ? 0 : deck_length / 2;
+    const offsetY = deck_configuration === 'json' ? 0 : deck_width / 2;
   
     customInterfaces.forEach(iface => {
       const { x, y, z, width, height, thickness = 0.1, type } = iface;
@@ -1156,10 +1152,10 @@ function directMovement(person,i) {
 
     // Record the new position and time:
     person.x.push(deck_configuration === 'json'
-        ? (person.geometry.position.x + deckCenterX)
+        ? person.geometry.position.x
         : (person.geometry.position.x + deck_length / 2));
     person.y.push(deck_configuration === 'json'
-        ? (person.geometry.position.y + deckCenterY)
+        ? person.geometry.position.y
         : person.geometry.position.y);
     person.time.push(time_step);
     person.BB.setFromObject(person.geometry);
@@ -1204,10 +1200,10 @@ function interfaceAwareMovement(person, i) {
   
     // 3) Compute the door’s position (JSON coords are deck-centered)
     const targetX = (deck_configuration === 'json')
-      ? (Number(iface.x ?? 0) - deckCenterX)
+      ? Number(iface.x ?? 0)
       : (Number(iface.x ?? 0) - deck_length/2);
     const targetY = (deck_configuration === 'json')
-      ? (Number(iface.y ?? 0) - deckCenterY)
+      ? Number(iface.y ?? 0)
       : (Number(iface.y ?? 0) - deck_width/2);
     // if we’re close enough to the door, switch to mustering logic
     const distToDoor = person.geometry.position.distanceTo(
@@ -1403,8 +1399,8 @@ $("#no_persons").on("change", function() {
     document.getElementById("movment2D").style.display = "block";
 
     const isJson = (deck_configuration === 'json');
-    const xShift = isJson ? deckCenterX : (deck_length / 2);   // JSON: convert scene coords back to ship coords
-    const yShift = isJson ? deckCenterY : 0;
+    const xShift = isJson ? 0 : (deck_length / 2);   // JSON: already in ship coords
+    const yShift = 0;
 
     function rectCorners2D(cx, cy, L, W, rotRad) {
         const hx = L / 2;
