@@ -148,6 +148,7 @@ let musteringStationsData = []; // Array of {x, y, length, width, name} for all 
 let deck_length, deck_width;
 let deckMinX = 0, deckMaxX = 0, deckMinY = 0, deckMaxY = 0;
 let deckCenterX = 0, deckCenterY = 0;
+let jsonCoordOffsetX = 0, jsonCoordOffsetY = 0; // JSON local->ship coordinate offset (m)
 let deltaT = 0;
 const clock = new THREE.Clock();
 let time_step = 0;
@@ -272,6 +273,7 @@ function initializeConfiguration() {
     deckOutline = null;
     deckCenterX = 0; deckCenterY = 0;
     deckMinX = 0; deckMaxX = 0; deckMinY = 0; deckMaxY = 0;
+    jsonCoordOffsetX = 0; jsonCoordOffsetY = 0;
     if (deck_configuration === "simple") {
       no_compartments = 5;
       // Single mustering station for simple mode
@@ -387,14 +389,46 @@ function initializeConfiguration() {
           deckCenterX = (deckMinX + deckMaxX) / 2;
           deckCenterY = (deckMinY + deckMaxY) / 2;
         }
+        // If JSON provides min_x/min_y but the outline (or other geometry) is in local coordinates,
+        // shift everything into the classic ship-design coordinate system.
+        const attrMinX = Number(deckEntry.attributes.min_x ?? deckEntry.attributes.minX ?? deckMinX);
+        const attrMinY = Number(deckEntry.attributes.min_y ?? deckEntry.attributes.minY ?? deckMinY);
+        jsonCoordOffsetX = attrMinX - deckMinX;
+        jsonCoordOffsetY = attrMinY - deckMinY;
+        const _coordTol = 1e-6;
+        if (Math.abs(jsonCoordOffsetX) > _coordTol || Math.abs(jsonCoordOffsetY) > _coordTol) {
+          // Shift deck outline (if present)
+          if (deckOutline && deckOutline.length >= 3) {
+            deckOutline = deckOutline.map(p => ({ x: Number(p.x) + jsonCoordOffsetX, y: Number(p.y) + jsonCoordOffsetY }));
+          }
+          // Shift derived deck bounds/center
+          deckMinX += jsonCoordOffsetX; deckMaxX += jsonCoordOffsetX;
+          deckMinY += jsonCoordOffsetY; deckMaxY += jsonCoordOffsetY;
+          deckCenterX += jsonCoordOffsetX; deckCenterY += jsonCoordOffsetY;
+          // Shift mustering station positions (they were read before the outline)
+          if (Array.isArray(musteringStationsData)) {
+            musteringStationsData = musteringStationsData.map(ms => ({
+              ...ms,
+              x: Number(ms.x) + jsonCoordOffsetX,
+              y: Number(ms.y) + jsonCoordOffsetY
+            }));
+          }
+        }
+
         // 4) Interface definitions (if any):
         const ifaceDefs = deckArrangement.arrangements.interfaces;
         if (ifaceDefs && Object.keys(ifaceDefs).length > 0) {
               // Convert each into a flat attributes object
-              customInterfaces = Object.keys(ifaceDefs).map(name => ({
-                name,
-                ...ifaceDefs[name].attributes
-              }));
+              // Convert each into a flat attributes object (and apply JSON min_x/min_y offset if needed)
+              customInterfaces = Object.keys(ifaceDefs).map(name => {
+                const attrs = ifaceDefs[name]?.attributes || {};
+                return {
+                  name,
+                  ...attrs,
+                  x: Number(attrs.x ?? 0) + jsonCoordOffsetX,
+                  y: Number(attrs.y ?? 0) + jsonCoordOffsetY
+                };
+              });
               console.warn("Custom geometry JSON contains interface definitions.");
               // Gather all compartment names mentioned in any interface
                 customInterfaces.forEach(iface => {
@@ -575,7 +609,10 @@ function createCompartments() {
             const zCenter = Number(attrs.z ?? 1);
             const rotDeg = Number(attrs.rotation ?? 0);
             const shapeType = String(attrs.shape || '').toLowerCase();
-            const outline = normalizeOutline(attrs.outline);
+            const outline0 = normalizeOutline(attrs.outline);
+            const outline = (outline0 && outline0.length >= 3)
+              ? outline0.map(p => ({ x: Number(p.x) + jsonCoordOffsetX, y: Number(p.y) + jsonCoordOffsetY }))
+              : null;
 
             let mesh;
 
@@ -626,7 +663,7 @@ function createCompartments() {
                         opacity: 0.3
                     })
                 );
-                mesh.position.set(Number(attrs.x ?? 0), Number(attrs.y ?? 0), zCenter);
+                mesh.position.set(Number(attrs.x ?? 0) + jsonCoordOffsetX, Number(attrs.y ?? 0) + jsonCoordOffsetY, zCenter);
                 mesh.rotation.z = (Math.PI * rotDeg) / 180.0;
                 mesh.userData.shape = 'rectangle';
                 mesh.userData.zCenter = zCenter;
