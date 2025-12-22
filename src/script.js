@@ -257,6 +257,30 @@ function parseDeckOutline(deckEntry) {
     }
 }
 
+
+// ---------------------------------------------------------------------------
+// Capture the filename used for Custom Geometry (JSON upload) so we can export it
+// together with simulation results.
+// layout_loader.js clears the file input value after loading, so store name on change.
+// ---------------------------------------------------------------------------
+let customGeometryLayoutFileName = null;
+
+function attachGeometryFileNameListener() {
+    const input = document.getElementById('geometryFileInput');
+    if (!input || input.__shipEvacuationFileNameListenerAttached) return;
+    input.__shipEvacuationFileNameListenerAttached = true;
+
+    // Capture phase so we run even if other handlers clear input.value
+    input.addEventListener('change', (e) => {
+        const file = e && e.target && e.target.files && e.target.files[0];
+        if (file && file.name) customGeometryLayoutFileName = file.name;
+    }, true);
+}
+
+attachGeometryFileNameListener();
+window.addEventListener('DOMContentLoaded', attachGeometryFileNameListener, { once: true });
+
+
 // Layout is loaded from JSON in layout_loader.js; this file listens for the load event.
 window.addEventListener('shipEvacuation:geometryLoaded', (event) => {
     const loaded = event?.detail?.deckArrangement;
@@ -1751,5 +1775,58 @@ $("#saveResultCSV").on("click", function() {
 });
 
 $("#saveResultJSON").on("click", function() {
+    if (!Array.isArray(persons) || persons.length === 0) {
+        alert("No simulation results available yet.");
+        return;
+    }
 
+    function buildPathPoints(p) {
+        const xs = Array.isArray(p.x) ? p.x : [];
+        const ys = Array.isArray(p.y) ? p.y : [];
+        const zs = Array.isArray(p.z) ? p.z : [];
+        const ts = Array.isArray(p.time) ? p.time : [];
+        const n = Math.min(xs.length, ys.length, zs.length, ts.length);
+
+        const out = [];
+        for (let k = 0; k < n; k++) {
+            const t = Number(ts[k]);
+            const x = Number(xs[k]);
+            const y = Number(ys[k]);
+            const z = Number(zs[k]);
+
+            let v = 0;
+            if (k > 0) {
+                const dt = Number(ts[k]) - Number(ts[k - 1]);
+                if (dt > 0) {
+                    const dx = Number(xs[k]) - Number(xs[k - 1]);
+                    const dy = Number(ys[k]) - Number(ys[k - 1]);
+                    const dz = Number(zs[k]) - Number(zs[k - 1]);
+                    v = Math.sqrt(dx * dx + dy * dy + dz * dz) / dt;
+                }
+            }
+
+            out.push({ t, x, y, z, v });
+        }
+        return out;
+    }
+
+    const results = {
+        schemaVersion: 1,
+        generatedAt: new Date().toISOString(),
+        deckConfiguration: deck_configuration,
+        customGeometryLayoutFile: (deck_configuration === 'json') ? (customGeometryLayoutFileName || null) : null,
+        noPersons: Number(no_persons) || persons.length,
+        persons: persons.map((p, i) => ({
+            id: (p && p.id != null) ? Number(p.id) : i,
+            desiredSpeed: (p && p.speed != null) ? Number(p.speed) : 0,
+            targetMusteringStationIndex: (p && p.targetMusteringStationIndex != null) ? Number(p.targetMusteringStationIndex) : 0,
+            path: buildPathPoints(p)
+        }))
+    };
+
+    const jsonText = JSON.stringify(results, null, 2);
+    const safeStamp = results.generatedAt.replace(/[:.]/g, '-');
+    const outName = "simulation_results_" + String(deck_configuration) + "_" + safeStamp + ".json";
+    const outFile = new File([jsonText], outName, { type: "application/json;charset=utf-8" });
+    saveAs(outFile);
 });
