@@ -1256,6 +1256,7 @@ function directMovement(person,i) {
         ? person.geometry.position.y
         : person.geometry.position.y);
     person.time.push(time_step);
+    person.z.push(person.geometry.position.z);
     person.BB.setFromObject(person.geometry);
     document.getElementById("movment" + String(i + 1)).innerText = person.dist.toFixed(2);
     // Check if person has reached their assigned mustering station
