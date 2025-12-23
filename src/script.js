@@ -106,15 +106,42 @@ class PolygonBoundingBox {
             return false;
         }
         
-        // If 'other' is a Box3, check its corners against this polygon
-        const corners = [
-            new THREE.Vector3(other.min.x, other.min.y, 0),
-            new THREE.Vector3(other.max.x, other.min.y, 0),
-            new THREE.Vector3(other.max.x, other.max.y, 0),
-            new THREE.Vector3(other.min.x, other.max.y, 0)
+        // If 'other' is a Box3, perform a robust polygon↔AABB intersection:
+        // 1) any AABB corner inside polygon?
+        const corners2D = [
+            { x: other.min.x, y: other.min.y },
+            { x: other.max.x, y: other.min.y },
+            { x: other.max.x, y: other.max.y },
+            { x: other.min.x, y: other.max.y }
         ];
-        
-        return corners.some(corner => this.containsPoint(corner));
+        if (corners2D.some(c => this.containsPoint(new THREE.Vector3(c.x, c.y, 0)))) {
+            return true;
+        }
+
+        // 2) any polygon vertex inside AABB?
+        if (this.outline.some(p => pointInAABB2D(p, other))) {
+            return true;
+        }
+
+        // 3) any edge intersection between polygon edges and AABB edges?
+        const boxEdges = [
+            [corners2D[0], corners2D[1]],
+            [corners2D[1], corners2D[2]],
+            [corners2D[2], corners2D[3]],
+            [corners2D[3], corners2D[0]]
+        ];
+
+        for (let i = 0; i < this.outline.length; i++) {
+            const a = this.outline[i];
+            const b = this.outline[(i + 1) % this.outline.length];
+            for (const [c, d] of boxEdges) {
+                if (segIntersect2D(a, b, c, d)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
     
     /**
@@ -134,6 +161,49 @@ class PolygonBoundingBox {
         this.max.set(Math.max(...xs), Math.max(...ys), 0);
     }
 }
+
+// ============================================================================
+// 2D geometry helpers (for robust PolygonBoundingBox ↔ Box3 intersection)
+// ============================================================================
+
+function pointInAABB2D(p, box) {
+    return p.x >= box.min.x && p.x <= box.max.x &&
+           p.y >= box.min.y && p.y <= box.max.y;
+}
+
+function segIntersect2D(a, b, c, d, eps = 1e-9) {
+    const cross = (u, v) => u.x * v.y - u.y * v.x;
+    const sub = (p, q) => ({ x: p.x - q.x, y: p.y - q.y });
+
+    const ab = sub(b, a);
+    const ac = sub(c, a);
+    const ad = sub(d, a);
+    const cd = sub(d, c);
+    const ca = sub(a, c);
+    const cb = sub(b, c);
+
+    const d1 = cross(ab, ac);
+    const d2 = cross(ab, ad);
+    const d3 = cross(cd, ca);
+    const d4 = cross(cd, cb);
+
+    const onSeg = (p, q, r) =>
+        Math.min(p.x, r.x) - eps <= q.x && q.x <= Math.max(p.x, r.x) + eps &&
+        Math.min(p.y, r.y) - eps <= q.y && q.y <= Math.max(p.y, r.y) + eps;
+
+    // Proper intersection
+    if (((d1 > eps && d2 < -eps) || (d1 < -eps && d2 > eps)) &&
+        ((d3 > eps && d4 < -eps) || (d3 < -eps && d4 > eps))) return true;
+
+    // Collinear / touching
+    if (Math.abs(d1) <= eps && onSeg(a, c, b)) return true;
+    if (Math.abs(d2) <= eps && onSeg(a, d, b)) return true;
+    if (Math.abs(d3) <= eps && onSeg(c, a, d)) return true;
+    if (Math.abs(d4) <= eps && onSeg(c, b, d)) return true;
+
+    return false;
+}
+
 
 // ============================================================================
 
@@ -159,7 +229,10 @@ let deckArrangement = null;
 let deckOutline = null;         // optional outline when loaded from JSON
 let customInterfaces = [];      // holds parsed interface attributes
 let interfaceMeshes = [];       // mesh instances for cleanup
-let interfaceCompNames = new Set(); 
+let interfaceCompNames = new Set();
+let deckExitCompNames = new Set();      // compartment names that have an interface that connects to 'deck'
+let deckExitIfaceByCompName = new Map(); // compName -> interface (deck-connected) for fast lookup
+ 
 
 // Normalize an outline array (supports [{x,y}] or [[x,y]]). Returns [{x,y}] without a duplicate closing point.
 function normalizeOutline(raw) {
@@ -198,6 +271,76 @@ function pointInPolygon2D(px, py, poly) {
     return inside;
 }
 
+// ============================================================================
+// Edge Distance Helpers for Safe Persona Positioning
+// ============================================================================
+
+/**
+ * Calculates the minimum distance from a point to a line segment.
+ * @param {number} px - Point X coordinate
+ * @param {number} py - Point Y coordinate
+ * @param {number} x1 - Segment start X
+ * @param {number} y1 - Segment start Y
+ * @param {number} x2 - Segment end X
+ * @param {number} y2 - Segment end Y
+ * @returns {number} Minimum distance from point to segment
+ */
+function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const lenSq = dx * dx + dy * dy;
+    
+    if (lenSq < 1e-12) {
+        return Math.sqrt((px - x1) ** 2 + (py - y1) ** 2);
+    }
+    
+    let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    
+    const closestX = x1 + t * dx;
+    const closestY = y1 + t * dy;
+    
+    return Math.sqrt((px - closestX) ** 2 + (py - closestY) ** 2);
+}
+
+/**
+ * Calculates the minimum distance from a point to any edge of a polygon.
+ * @param {number} px - Point X coordinate
+ * @param {number} py - Point Y coordinate
+ * @param {Array<{x: number, y: number}>} poly - Polygon vertices
+ * @returns {number} Minimum distance to any polygon edge
+ */
+function pointToPolygonEdgeDistance(px, py, poly) {
+    if (!Array.isArray(poly) || poly.length < 3) return Infinity;
+    
+    let minDist = Infinity;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const dist = pointToSegmentDistance(
+            px, py,
+            poly[j].x, poly[j].y,
+            poly[i].x, poly[i].y
+        );
+        if (dist < minDist) minDist = dist;
+    }
+    return minDist;
+}
+
+/**
+ * Checks if a point is safely inside a polygon with minimum margin from edges.
+ * @param {number} px - Point X coordinate
+ * @param {number} py - Point Y coordinate
+ * @param {Array<{x: number, y: number}>} poly - Polygon vertices
+ * @param {number} minMargin - Minimum required distance from any edge
+ * @returns {boolean} True if point is inside AND at least minMargin from all edges
+ */
+function isPointSafelyInsidePolygon(px, py, poly, minMargin = 0.5) {
+    if (!pointInPolygon2D(px, py, poly)) {
+        return false;
+    }
+    const edgeDist = pointToPolygonEdgeDistance(px, py, poly);
+    return edgeDist >= minMargin;
+}
+
 // For polygon rooms we store an *absolute* outline in userData.outline; when dragged, add mesh.position shift.
 function getMeshOutlineGlobal(mesh) {
     const base = mesh?.userData?.outline;
@@ -228,6 +371,41 @@ function getCompartmentIndexAtPoint(position) {
     }
     return -1;
 }
+
+// ============================================================================
+// Deck-exit door helpers (prevent "walking through walls" unless near a deck door)
+// ============================================================================
+
+function getInterfaceLocalXY(iface) {
+    const x = Number(iface?.x ?? 0);
+    const y = Number(iface?.y ?? 0);
+    if (deck_configuration === 'json') return { x, y };
+    return { x: x - deck_length / 2, y: y - deck_width / 2 };
+}
+
+function getDeckExitInterfaceForCompIndex(compIndex) {
+    const compName = (compIndex >= 0) ? compartmentsMeshes[compIndex]?.name : null;
+    if (!compName) return null;
+    return deckExitIfaceByCompName.get(compName) || null;
+}
+
+function isNearDeckExitDoor(person, compIndex) {
+    const iface = getDeckExitInterfaceForCompIndex(compIndex);
+    if (!iface) return false;
+
+    const { x: doorX, y: doorY } = getInterfaceLocalXY(iface);
+    const dx = person.geometry.position.x - doorX;
+    const dy = person.geometry.position.y - doorY;
+
+    // Use interface size if provided; fall back to ~1m door influence radius
+    const w = Number(iface?.width ?? iface?.w ?? 1);
+    const h = Number(iface?.height ?? iface?.h ?? 1);
+    const base = Math.max(w, h, 1);
+    const r = Math.max(0.75, 0.75 * base);
+
+    return (dx * dx + dy * dy) <= (r * r);
+}
+
 
 // Normalize a deck outline array (supports [{x,y}] or [[x,y]]).
 function parseDeckOutline(deckEntry) {
@@ -334,6 +512,8 @@ function initializeConfiguration() {
     else if (deck_configuration === "json" && deckArrangement) {
         // Reset interface-related state for each new JSON load
         interfaceCompNames.clear();
+        deckExitCompNames.clear();
+        deckExitIfaceByCompName.clear();
         customInterfaces = [];
         // 1) Read deck size from JSON:
         const deckEntry = deckArrangement.arrangements.deck;
@@ -457,13 +637,24 @@ function initializeConfiguration() {
               });
               console.warn("Custom geometry JSON contains interface definitions.");
               // Gather all compartment names mentioned in any interface
-                customInterfaces.forEach(iface => {
-                if (Array.isArray(iface.connects)) {
+              // NOTE: interfaceCompNames includes *all* compartments connected by any interface.
+              // deckExitCompNames / deckExitIfaceByCompName track ONLY compartments that have an interface to 'deck'.
+              customInterfaces.forEach(iface => {
+                if (!Array.isArray(iface.connects)) return;
+
                 // populate the GLOBAL set instead of a local one:
-                 iface.connects.filter(n => n !== 'deck')
-                 .forEach(n => interfaceCompNames.add(n));
+                iface.connects.filter(n => n !== 'deck')
+                  .forEach(n => interfaceCompNames.add(n));
+
+                // record ONLY deck-connected exits for spawn / wall-crossing logic
+                if (iface.connects.includes('deck')) {
+                  iface.connects.filter(n => n !== 'deck').forEach(n => {
+                    deckExitCompNames.add(n);
+                    // if multiple doors exist, keep the first one (or overwrite — either is acceptable)
+                    if (!deckExitIfaceByCompName.has(n)) deckExitIfaceByCompName.set(n, iface);
+                  });
                 }
-                });
+              });
             } else {
               console.warn("Custom geometry JSON contains no interface definitions.");
               customInterfaces = [];
@@ -1098,6 +1289,76 @@ function isPointInsideDeck(position) {
     return deckBB ? deckBB.containsPoint(position) : false;
 }
 
+/**
+ * Checks if a position is safely inside the deck with margin from edges.
+ * @param {THREE.Vector3} position - Position to check
+ * @param {number} minMargin - Minimum distance from deck edges
+ * @returns {boolean} True if safely inside deck
+ */
+function isPointSafelyInsideDeck(position, minMargin = 0.5) {
+    if (deck_configuration === 'json' && deckOutline && deckOutline.length >= 3) {
+        return isPointSafelyInsidePolygon(position.x, position.y, deckOutline, minMargin);
+    }
+    
+    if (!deckBB) return false;
+    return (
+        position.x >= deckBB.min.x + minMargin &&
+        position.x <= deckBB.max.x - minMargin &&
+        position.y >= deckBB.min.y + minMargin &&
+        position.y <= deckBB.max.y - minMargin
+    );
+}
+
+/**
+ * Checks if a position is safely outside ALL compartments with margin.
+ * @param {THREE.Vector3} position - Position to check
+ * @param {number} minMargin - Minimum distance from compartment edges
+ * @returns {boolean} True if safely outside all compartments
+ */
+function isPositionSafelyOutsideCompartments(position, minMargin = 0.5) {
+    for (let i = 0; i < compartmentsMeshes.length; i++) {
+        const mesh = compartmentsMeshes[i];
+        const outline = getMeshOutlineGlobal(mesh);
+        
+        if (outline && outline.length >= 3) {
+            if (pointInPolygon2D(position.x, position.y, outline)) {
+                return false;
+            }
+            const edgeDist = pointToPolygonEdgeDistance(position.x, position.y, outline);
+            if (edgeDist < minMargin) {
+                return false;
+            }
+        } else {
+            const bb = compartmentsBB[i];
+            if (bb) {
+                const expanded = bb.clone().expandByScalar(minMargin);
+                if (expanded.containsPoint(position)) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+/**
+ * Checks if position is safely outside mustering stations.
+ * @param {THREE.Vector3} position - Position to check
+ * @param {number} minMargin - Minimum distance from station edges
+ * @returns {boolean} True if safely outside all mustering stations
+ */
+function isPositionSafelyOutsideMusteringStations(position, minMargin = 0.5) {
+    if (!musteringStationsBB || musteringStationsBB.length === 0) return true;
+    
+    for (const bb of musteringStationsBB) {
+        const expanded = bb.clone().expandByScalar(minMargin);
+        if (expanded.containsPoint(position)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 function createPersons(num) {
     num = Number(num);  // Ensure num is a number.
     const person_colors = [
@@ -1106,6 +1367,9 @@ function createPersons(num) {
         '#00FF7F', '#00FA9A', '#8FBC8F', '#66CDAA', '#9ACD32', 
         '#7CFC00', '#7FFF00', '#90EE90', '#ADFF2F', '#98FB98'
     ];
+    
+    // Safety margin from all polygon edges (in meters)
+    const EDGE_MARGIN = 1.0;
     
     let PersonLocLimits;
     if (deck_configuration === "simple") {
@@ -1142,73 +1406,74 @@ function createPersons(num) {
         let human = new Human(i, 3 + Math.random() * 2, person_colors[i % person_colors.length]);
         let candidate;
         let attempts = 0;
-        // —— BREAKDOWN BY deck_configuration —— 
+        const maxAttempts = 2000;
+        
         if (deck_configuration === 'simple' || deck_configuration === 'l-shape') {
           // ► simple & L-shape: keep everyone on the deck as before
           do {
             candidate = getRandomPositionOnLimitedArea(PersonLocLimits);
             attempts++;
-            if (attempts > 1000) {
-              console.warn(`Could not find valid spot for Person ${i} on ${deck_configuration}`);
+            if (attempts > maxAttempts) {
+              console.warn(`Could not find valid spot for Person ${i} after ${maxAttempts} attempts`);
               break;
             }
           } while (
-            !isPointInsideDeck(candidate) ||
-            isPositionInsideAnyCompartment(candidate) ||
-            isPositionInMusteringStation(candidate)
+            !isPointSafelyInsideDeck(candidate, EDGE_MARGIN) ||
+            !isPositionSafelyOutsideCompartments(candidate, EDGE_MARGIN) ||
+            !isPositionSafelyOutsideMusteringStations(candidate, EDGE_MARGIN)
           );
-             } else if (deck_configuration === 'json') {
+        } else if (deck_configuration === 'json') {
           if (customInterfaces.length > 0
-              && interfaceCompNames.size > 0
+              && deckExitCompNames.size > 0
               && i === 0) {
             // ► JSON + interfaces: Person 0 must start inside one of those interface compartments
             do {
               candidate = getRandomPositionOnLimitedArea(PersonLocLimits);
               attempts++;
-              if (attempts > 1000) {
+              if (attempts > maxAttempts) {
                 console.warn("Couldn't seed Person 0 inside an interface compartment");
                 break;
               }
+              let compIdx = getCompartmentIndexAtPoint(candidate);
             } while (
-              // 1) must be in *some* compartment…
-              !isPositionInsideAnyCompartment(candidate)
+              compIdx < 0
               ||
-              // 2) …and that compartment’s name must be in our interfaceCompNames
-              ![...interfaceCompNames].some(name => {
-                const idx = compartmentsMeshes.findIndex(m => m.name === name);
-                return idx >= 0 && isPointInsideCompartmentIndex(candidate, idx);
-              })
+              !deckExitCompNames.has(compartmentsMeshes[compIdx]?.name)
               ||
-              // 3) must also sit on the deck outline
-              !isPointInsideDeck(candidate)
+              !isPointSafelyInsideDeck(candidate, EDGE_MARGIN)
             );
           } else {
             // ► JSON without interfaces (or Persons 1+) fall back to “deck only”
             do {
               candidate = getRandomPositionOnLimitedArea(PersonLocLimits);
               attempts++;
-              if (attempts > 1000) {
-                console.warn(`Could not find valid spot for Person ${i} on JSON deck`);
+              if (attempts > maxAttempts) {
+                console.warn(`Could not find valid spot for Person ${i} after ${maxAttempts} attempts`);
                 break;
               }
             } while (
-              !isPointInsideDeck(candidate) ||
-              isPositionInsideAnyCompartment(candidate) ||
-              isPositionInMusteringStation(candidate)
+              !isPointSafelyInsideDeck(candidate, EDGE_MARGIN) ||
+              !isPositionSafelyOutsideCompartments(candidate, EDGE_MARGIN) ||
+              !isPositionSafelyOutsideMusteringStations(candidate, EDGE_MARGIN)
             );
           }
-             } else {
+        } else {
           // ► any other (future?) configuration: default to “deck only”
           do {
             candidate = getRandomPositionOnLimitedArea(PersonLocLimits);
             attempts++;
-            if (attempts > 1000) { break; }
+            if (attempts > maxAttempts) { break; }
           } while (
-            !isPointInsideDeck(candidate) ||
-            isPositionInsideAnyCompartment(candidate) ||
-            isPositionInMusteringStation(candidate)
+            !isPointSafelyInsideDeck(candidate, EDGE_MARGIN) ||
+            !isPositionSafelyOutsideCompartments(candidate, EDGE_MARGIN) ||
+            !isPositionSafelyOutsideMusteringStations(candidate, EDGE_MARGIN)
           );
         }
+        
+        if (attempts > 100) {
+            console.log(`Person ${i} placed after ${attempts} attempts`);
+        }
+        
         human.geometry.position.copy(candidate);
         // Assign the nearest mustering station to this person
         human.targetMusteringStationIndex = findNearestMusteringStation(candidate);
@@ -1239,10 +1504,12 @@ function directMovement(person,i) {
     const newPos = person.geometry.position.clone().add(new THREE.Vector3(moveX, moveY, 0));
     const newBB = new THREE.Box3().setFromObject(person.geometry).translate(new THREE.Vector3(moveX, moveY, 0));
     let collision = compartmentsBB.some((bb, idx) => {
-        // ignore the wall of the compartment you’re currently inside—
-        // so you can actually step through the opening
+        // Only ignore collisions with your current compartment when you are
+        // physically near the deck-connected door of that compartment.
+        // This prevents agents from "walking through walls" in rooms with no deck exit.
         if (idx === person.currentCompartmentIndex
-            && isPointInsideCompartmentIndex(person.geometry.position, idx)) {
+            && isPointInsideCompartmentIndex(person.geometry.position, idx)
+            && isNearDeckExitDoor(person, idx)) {
             return false;
         }
         return bb.intersectsBox(newBB);
@@ -1310,11 +1577,7 @@ function interfaceAwareMovement(person, i) {
     }
   
     // 2) Find the door that connects this compartment to the deck
-    const iface = customInterfaces.find(
-      iface => Array.isArray(iface.connects)
-            && iface.connects.includes(compName)
-            && iface.connects.includes('deck')
-    );
+    const iface = getDeckExitInterfaceForCompIndex(compIndex);
     if (!iface) {
       // no door? just avoid as before
       directMovement(person, i);
@@ -1322,12 +1585,19 @@ function interfaceAwareMovement(person, i) {
     }
   
     // 3) Compute the door’s position (JSON coords are deck-centered)
+<<<<<<< HEAD
     const targetX = (deck_configuration === 'json')
       ? Number(iface.x ?? 0)
       : (Number(iface.x ?? 0) - deck_length/2);
     const targetY = (deck_configuration === 'json')
       ? Number(iface.y ?? 0)
       : (Number(iface.y ?? 0) - deck_width/2);
+||||||| 861e764
+    const targetX = deck_configuration === 'json' ? iface.x : (iface.x - deck_length/2);
+    const targetY = deck_configuration === 'json' ? iface.y : (iface.y - deck_width/2);
+=======
+    const { x: targetX, y: targetY } = getInterfaceLocalXY(iface);
+>>>>>>> fixing
     // if we’re close enough to the door, switch to mustering logic
     const distToDoor = person.geometry.position.distanceTo(
       new THREE.Vector3(targetX, targetY, person.geometry.position.z)
