@@ -268,6 +268,76 @@ function pointInPolygon2D(px, py, poly) {
     return inside;
 }
 
+// ============================================================================
+// Edge Distance Helpers for Safe Persona Positioning
+// ============================================================================
+
+/**
+ * Calculates the minimum distance from a point to a line segment.
+ * @param {number} px - Point X coordinate
+ * @param {number} py - Point Y coordinate
+ * @param {number} x1 - Segment start X
+ * @param {number} y1 - Segment start Y
+ * @param {number} x2 - Segment end X
+ * @param {number} y2 - Segment end Y
+ * @returns {number} Minimum distance from point to segment
+ */
+function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const lenSq = dx * dx + dy * dy;
+    
+    if (lenSq < 1e-12) {
+        return Math.sqrt((px - x1) ** 2 + (py - y1) ** 2);
+    }
+    
+    let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    
+    const closestX = x1 + t * dx;
+    const closestY = y1 + t * dy;
+    
+    return Math.sqrt((px - closestX) ** 2 + (py - closestY) ** 2);
+}
+
+/**
+ * Calculates the minimum distance from a point to any edge of a polygon.
+ * @param {number} px - Point X coordinate
+ * @param {number} py - Point Y coordinate
+ * @param {Array<{x: number, y: number}>} poly - Polygon vertices
+ * @returns {number} Minimum distance to any polygon edge
+ */
+function pointToPolygonEdgeDistance(px, py, poly) {
+    if (!Array.isArray(poly) || poly.length < 3) return Infinity;
+    
+    let minDist = Infinity;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const dist = pointToSegmentDistance(
+            px, py,
+            poly[j].x, poly[j].y,
+            poly[i].x, poly[i].y
+        );
+        if (dist < minDist) minDist = dist;
+    }
+    return minDist;
+}
+
+/**
+ * Checks if a point is safely inside a polygon with minimum margin from edges.
+ * @param {number} px - Point X coordinate
+ * @param {number} py - Point Y coordinate
+ * @param {Array<{x: number, y: number}>} poly - Polygon vertices
+ * @param {number} minMargin - Minimum required distance from any edge
+ * @returns {boolean} True if point is inside AND at least minMargin from all edges
+ */
+function isPointSafelyInsidePolygon(px, py, poly, minMargin = 0.5) {
+    if (!pointInPolygon2D(px, py, poly)) {
+        return false;
+    }
+    const edgeDist = pointToPolygonEdgeDistance(px, py, poly);
+    return edgeDist >= minMargin;
+}
+
 // For polygon rooms we store an *absolute* outline in userData.outline; when dragged, add mesh.position shift.
 function getMeshOutlineGlobal(mesh) {
     const base = mesh?.userData?.outline;
@@ -1096,6 +1166,76 @@ function isPointInsideDeck(position) {
     return deckBB ? deckBB.containsPoint(position) : false;
 }
 
+/**
+ * Checks if a position is safely inside the deck with margin from edges.
+ * @param {THREE.Vector3} position - Position to check
+ * @param {number} minMargin - Minimum distance from deck edges
+ * @returns {boolean} True if safely inside deck
+ */
+function isPointSafelyInsideDeck(position, minMargin = 0.5) {
+    if (deck_configuration === 'json' && deckOutline && deckOutline.length >= 3) {
+        return isPointSafelyInsidePolygon(position.x, position.y, deckOutline, minMargin);
+    }
+    
+    if (!deckBB) return false;
+    return (
+        position.x >= deckBB.min.x + minMargin &&
+        position.x <= deckBB.max.x - minMargin &&
+        position.y >= deckBB.min.y + minMargin &&
+        position.y <= deckBB.max.y - minMargin
+    );
+}
+
+/**
+ * Checks if a position is safely outside ALL compartments with margin.
+ * @param {THREE.Vector3} position - Position to check
+ * @param {number} minMargin - Minimum distance from compartment edges
+ * @returns {boolean} True if safely outside all compartments
+ */
+function isPositionSafelyOutsideCompartments(position, minMargin = 0.5) {
+    for (let i = 0; i < compartmentsMeshes.length; i++) {
+        const mesh = compartmentsMeshes[i];
+        const outline = getMeshOutlineGlobal(mesh);
+        
+        if (outline && outline.length >= 3) {
+            if (pointInPolygon2D(position.x, position.y, outline)) {
+                return false;
+            }
+            const edgeDist = pointToPolygonEdgeDistance(position.x, position.y, outline);
+            if (edgeDist < minMargin) {
+                return false;
+            }
+        } else {
+            const bb = compartmentsBB[i];
+            if (bb) {
+                const expanded = bb.clone().expandByScalar(minMargin);
+                if (expanded.containsPoint(position)) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+/**
+ * Checks if position is safely outside mustering stations.
+ * @param {THREE.Vector3} position - Position to check
+ * @param {number} minMargin - Minimum distance from station edges
+ * @returns {boolean} True if safely outside all mustering stations
+ */
+function isPositionSafelyOutsideMusteringStations(position, minMargin = 0.5) {
+    if (!musteringStationsBB || musteringStationsBB.length === 0) return true;
+    
+    for (const bb of musteringStationsBB) {
+        const expanded = bb.clone().expandByScalar(minMargin);
+        if (expanded.containsPoint(position)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 function createPersons(num) {
     num = Number(num);  // Ensure num is a number.
     const person_colors = [
@@ -1104,6 +1244,9 @@ function createPersons(num) {
         '#00FF7F', '#00FA9A', '#8FBC8F', '#66CDAA', '#9ACD32', 
         '#7CFC00', '#7FFF00', '#90EE90', '#ADFF2F', '#98FB98'
     ];
+    
+    // Safety margin from all polygon edges (in meters)
+    const EDGE_MARGIN = 1.0;
     
     let PersonLocLimits;
     if (deck_configuration === "simple") {
@@ -1140,22 +1283,23 @@ function createPersons(num) {
         let human = new Human(i, 3 + Math.random() * 2, person_colors[i % person_colors.length]);
         let candidate;
         let attempts = 0;
-        // —— BREAKDOWN BY deck_configuration —— 
+        const maxAttempts = 2000;
+        
         if (deck_configuration === 'simple' || deck_configuration === 'l-shape') {
           // ► simple & L-shape: keep everyone on the deck as before
           do {
             candidate = getRandomPositionOnLimitedArea(PersonLocLimits);
             attempts++;
-            if (attempts > 1000) {
-              console.warn(`Could not find valid spot for Person ${i} on ${deck_configuration}`);
+            if (attempts > maxAttempts) {
+              console.warn(`Could not find valid spot for Person ${i} after ${maxAttempts} attempts`);
               break;
             }
           } while (
-            !isPointInsideDeck(candidate) ||
-            isPositionInsideAnyCompartment(candidate) ||
-            isPositionInMusteringStation(candidate)
+            !isPointSafelyInsideDeck(candidate, EDGE_MARGIN) ||
+            !isPositionSafelyOutsideCompartments(candidate, EDGE_MARGIN) ||
+            !isPositionSafelyOutsideMusteringStations(candidate, EDGE_MARGIN)
           );
-             } else if (deck_configuration === 'json') {
+        } else if (deck_configuration === 'json') {
           if (customInterfaces.length > 0
               && deckExitCompNames.size > 0
               && i === 0) {
@@ -1163,48 +1307,50 @@ function createPersons(num) {
             do {
               candidate = getRandomPositionOnLimitedArea(PersonLocLimits);
               attempts++;
-              if (attempts > 1000) {
+              if (attempts > maxAttempts) {
                 console.warn("Couldn't seed Person 0 inside an interface compartment");
                 break;
               }
-            let compIdx = getCompartmentIndexAtPoint(candidate);
+              let compIdx = getCompartmentIndexAtPoint(candidate);
             } while (
-              // 1) must be in *some* compartment…
               compIdx < 0
               ||
-              // 2) …and that compartment must have a deck-connected interface
               !deckExitCompNames.has(compartmentsMeshes[compIdx]?.name)
               ||
-              // 3) must also sit on the deck outline
-              !isPointInsideDeck(candidate)
+              !isPointSafelyInsideDeck(candidate, EDGE_MARGIN)
             );
           } else {
             // ► JSON without interfaces (or Persons 1+) fall back to “deck only”
             do {
               candidate = getRandomPositionOnLimitedArea(PersonLocLimits);
               attempts++;
-              if (attempts > 1000) {
-                console.warn(`Could not find valid spot for Person ${i} on JSON deck`);
+              if (attempts > maxAttempts) {
+                console.warn(`Could not find valid spot for Person ${i} after ${maxAttempts} attempts`);
                 break;
               }
             } while (
-              !isPointInsideDeck(candidate) ||
-              isPositionInsideAnyCompartment(candidate) ||
-              isPositionInMusteringStation(candidate)
+              !isPointSafelyInsideDeck(candidate, EDGE_MARGIN) ||
+              !isPositionSafelyOutsideCompartments(candidate, EDGE_MARGIN) ||
+              !isPositionSafelyOutsideMusteringStations(candidate, EDGE_MARGIN)
             );
           }
-             } else {
+        } else {
           // ► any other (future?) configuration: default to “deck only”
           do {
             candidate = getRandomPositionOnLimitedArea(PersonLocLimits);
             attempts++;
-            if (attempts > 1000) { break; }
+            if (attempts > maxAttempts) { break; }
           } while (
-            !isPointInsideDeck(candidate) ||
-            isPositionInsideAnyCompartment(candidate) ||
-            isPositionInMusteringStation(candidate)
+            !isPointSafelyInsideDeck(candidate, EDGE_MARGIN) ||
+            !isPositionSafelyOutsideCompartments(candidate, EDGE_MARGIN) ||
+            !isPositionSafelyOutsideMusteringStations(candidate, EDGE_MARGIN)
           );
         }
+        
+        if (attempts > 100) {
+            console.log(`Person ${i} placed after ${attempts} attempts`);
+        }
+        
         human.geometry.position.copy(candidate);
         // Assign the nearest mustering station to this person
         human.targetMusteringStationIndex = findNearestMusteringStation(candidate);
